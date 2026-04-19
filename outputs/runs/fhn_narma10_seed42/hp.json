@@ -1,0 +1,15 @@
+{
+  "ridge_alpha": 10.0,
+  "fhn_rc": {
+    "units": 200,
+    "density": 0.1,
+    "sr": 0.9,
+    "input_scale": 0.5,
+    "a": 0.7,
+    "b": 0.8,
+    "tau": 12.5,
+    "dt": 0.1,
+    "internal_steps": 2,
+    "seed": 42
+  }
+}

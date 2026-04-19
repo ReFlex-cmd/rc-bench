@@ -1,0 +1,84 @@
+---
+- name: Deploy RC-Bench Platform
+  hosts: webservers
+  become: true  # Выполнять все команды от имени root (sudo)
+  vars:
+    # Настройки проекта
+    project_dir: /opt/rc-bench
+    repo_url: git@github.com:ReFlex-cmd/rc-bench.git 
+    # В реальной жизни секреты хранят в Ansible Vault, но для начала передадим их так
+    env_vars:
+      POSTGRES_USER: rc_user
+      POSTGRES_PASSWORD: super_secure_password_prod
+      POSTGRES_DB: rc_bench_prod
+      DB_HOST: db
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: change_this_in_production_please
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 60
+
+  tasks:
+    # ---------------------------------------------------
+    # БЛОК 1: УСТАНОВКА DOCKER (Provisioning)
+    # ---------------------------------------------------
+    - name: Install required system packages
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+          - python3-pip
+          - git
+        state: present
+        update_cache: yes
+
+    - name: Add Docker GPG apt Key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker Repository
+      apt_repository:
+        repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable
+        state: present
+
+    - name: Install Docker CE
+      apt:
+        name: docker-ce
+        state: present
+        update_cache: yes
+
+    # ---------------------------------------------------
+    # БЛОК 2: НАСТРОЙКА ПРОЕКТА (Deployment)
+    # ---------------------------------------------------
+    - name: Create project directory
+      file:
+        path: "{{ project_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Pull project from GitHub
+      git:
+        repo: "{{ repo_url }}"
+        dest: "{{ project_dir }}"
+        version: main
+        force: yes # Принудительно обновить код, если он изменился
+        accept_hostkey: yes        
+
+    - name: Create .env file from template
+      copy:
+        dest: "{{ project_dir }}/.env"
+        content: |
+          {% for key, value in env_vars.items() %}
+          {{ key }}={{ value }}
+          {% endfor %}
+
+    # ---------------------------------------------------
+    # БЛОК 3: ЗАПУСК
+    # ---------------------------------------------------
+    - name: Build and Start Docker Compose
+      # Используем модуль shell, так как он проще для новичков, чем модуль docker_compose
+      shell: docker compose up -d --build
+      args:
+        chdir: "{{ project_dir }}" # Выполнить команду внутри папки проекта

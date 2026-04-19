@@ -1,0 +1,18 @@
+{
+  "task": "narma10",
+  "length": 20000,
+  "train_frac": 0.6,
+  "val_frac": 0.2,
+  "test_frac": 0.2,
+  "washout": 200,
+  "scaler": "zscore",
+  "readout": "ridge",
+  "ridge_alpha_grid": [
+    0.001,
+    0.01,
+    0.1,
+    1.0,
+    10.0
+  ],
+  "seed": 42
+}

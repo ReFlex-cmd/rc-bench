@@ -1,0 +1,11 @@
+{
+  "ridge_alpha": 10.0,
+  "logistic_rc": {
+    "units": 300,
+    "r_min": 3.6,
+    "r_max": 4.0,
+    "input_scale": 0.5,
+    "alpha": 0.2,
+    "seed": 42
+  }
+}

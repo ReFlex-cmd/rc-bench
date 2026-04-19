@@ -1,0 +1,12 @@
+{
+  "ridge_alpha": 0.01,
+  "reservoir": {
+    "units": 300,
+    "sr": 0.9,
+    "lr": 1.0,
+    "input_scaling": 0.5,
+    "rc_connectivity": 0.1,
+    "input_connectivity": 0.1,
+    "seed": 42
+  }
+}
