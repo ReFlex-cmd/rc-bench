@@ -10,6 +10,9 @@ from rc_bench.core.reservoirs.esn_service import ESNReservoir
 from rc_bench.core.reservoirs.lsm_service import LSMReservoir
 from rc_bench.core.reservoirs.fhn_service import FHNReservoir
 from rc_bench.core.reservoirs.logistic_service import LogisticReservoir
+from rc_bench.core.reservoirs.leaky_esn_service import LeakyESNReservoir
+from rc_bench.core.reservoirs.deep_esn_service import DeepESNReservoir
+from rc_bench.core.reservoirs.qrc_service import QRCReservoir
 from rc_bench.core.reservoirs.registry import get_reservoir, REGISTRY
 from rc_bench.runners.experiment_runner import run_experiment
 
@@ -38,6 +41,24 @@ _SPECS = {
     "logistic": ExperimentSpec(
         dataset=DatasetSpec(name="narma10"),
         reservoir=ReservoirSpec(type="logistic", params={"units": 50}),
+        protocol=ProtocolSpec(washout=50),
+        seed=42,
+    ),
+    "leaky_esn": ExperimentSpec(
+        dataset=DatasetSpec(name="narma10"),
+        reservoir=ReservoirSpec(type="leaky_esn", params={"units": 50, "sr": 0.9, "leak_rate": 0.3}),
+        protocol=ProtocolSpec(washout=50),
+        seed=42,
+    ),
+    "deep_esn": ExperimentSpec(
+        dataset=DatasetSpec(name="narma10"),
+        reservoir=ReservoirSpec(type="deep_esn", params={"n_layers": 2, "units": 30}),
+        protocol=ProtocolSpec(washout=50),
+        seed=42,
+    ),
+    "qrc": ExperimentSpec(
+        dataset=DatasetSpec(name="narma10"),
+        reservoir=ReservoirSpec(type="qrc", params={"n_qubits": 16, "depth": 2}),
         protocol=ProtocolSpec(washout=50),
         seed=42,
     ),
@@ -105,12 +126,34 @@ class TestLogistic(_ReservoirTestBase):
     rtype = "logistic"
 
 
+class TestLeakyESN(_ReservoirTestBase):
+    rtype = "leaky_esn"
+
+
+class TestDeepESN(_ReservoirTestBase):
+    rtype = "deep_esn"
+
+
+class TestQRC(_ReservoirTestBase):
+    rtype = "qrc"
+
+
 class TestRegistry:
+    _ALL_TYPES = {"esn", "lsm", "fhn", "logistic", "leaky_esn", "deep_esn", "qrc"}
+
     def test_all_types_registered(self):
-        assert set(REGISTRY) == {"esn", "lsm", "fhn", "logistic"}
+        assert set(REGISTRY) == self._ALL_TYPES
 
     def test_get_reservoir_returns_correct_class(self):
-        for rtype, cls in [("esn", ESNReservoir), ("lsm", LSMReservoir), ("fhn", FHNReservoir), ("logistic", LogisticReservoir)]:
+        for rtype, cls in [
+            ("esn", ESNReservoir),
+            ("lsm", LSMReservoir),
+            ("fhn", FHNReservoir),
+            ("logistic", LogisticReservoir),
+            ("leaky_esn", LeakyESNReservoir),
+            ("deep_esn", DeepESNReservoir),
+            ("qrc", QRCReservoir),
+        ]:
             assert isinstance(get_reservoir(rtype, _reservoir_config(_SPECS[rtype])), cls)
 
     def test_unknown_type_raises(self):

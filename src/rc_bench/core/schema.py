@@ -13,7 +13,7 @@ class DatasetSpec(BaseModel):
 
 
 class ReservoirSpec(BaseModel):
-    type: Literal["esn", "lsm", "fhn", "logistic"]
+    type: Literal["esn", "lsm", "fhn", "logistic", "leaky_esn", "deep_esn", "qrc"]
     params: Dict[str, Any] = Field(default_factory=dict)
 
 

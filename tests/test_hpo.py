@@ -40,14 +40,16 @@ _BASE_SPEC = ExperimentSpec(
 # ---------------------------------------------------------------------------
 
 class TestSearchSpaces:
+    _ALL_RTYPES = {"esn", "fhn", "lsm", "logistic", "leaky_esn", "deep_esn", "qrc"}
+
     def test_all_reservoir_types_covered(self):
-        assert set(SEARCH_SPACES) == {"esn", "fhn", "lsm", "logistic"}
+        assert set(SEARCH_SPACES) == self._ALL_RTYPES
 
     def test_readout_alpha_in_every_space(self):
         for rtype, space in SEARCH_SPACES.items():
             assert "readout_alpha" in space, f"readout_alpha missing for {rtype}"
 
-    @pytest.mark.parametrize("rtype", ["esn", "fhn", "lsm", "logistic"])
+    @pytest.mark.parametrize("rtype", ["esn", "fhn", "lsm", "logistic", "leaky_esn", "deep_esn", "qrc"])
     def test_suggest_params_keys(self, rtype):
         import optuna
         study = optuna.create_study()
@@ -56,7 +58,7 @@ class TestSearchSpaces:
         assert "reservoir_params" in params
         assert "readout_alpha" in params
 
-    @pytest.mark.parametrize("rtype", ["esn", "fhn", "lsm", "logistic"])
+    @pytest.mark.parametrize("rtype", ["esn", "fhn", "lsm", "logistic", "leaky_esn", "deep_esn", "qrc"])
     def test_suggest_params_values_in_range(self, rtype):
         import optuna
         study = optuna.create_study()

@@ -51,6 +51,27 @@ SEARCH_SPACES: Dict[str, Dict[str, _SpaceEntry]] = {
         "coupling":          ("float_log", 0.01, 0.5),
         "readout_alpha":     ("float_log", 1e-4, 10.0),
     },
+    "leaky_esn": {
+        "sr":                ("float",     0.1,  1.5),
+        "leak_rate":         ("float",     0.05, 1.0),
+        "input_scaling":     ("float_log", 0.01, 2.0),
+        "density":           ("float_log", 0.01, 0.5),
+        "readout_alpha":     ("float_log", 1e-4, 10.0),
+    },
+    "deep_esn": {
+        "n_layers":          ("int",       2,    5),
+        "sr":                ("float",     0.1,  1.5),
+        "leak_rate":         ("float",     0.05, 1.0),
+        "input_scaling":     ("float_log", 0.01, 2.0),
+        "density":           ("float_log", 0.01, 0.5),
+        "readout_alpha":     ("float_log", 1e-4, 10.0),
+    },
+    "qrc": {
+        "sr":                ("float",     0.1,  1.5),
+        "coupling":          ("float_log", 0.1,  2.0),
+        "depth":             ("int",       2,    6),
+        "readout_alpha":     ("float_log", 1e-4, 10.0),
+    },
 }
 
 
