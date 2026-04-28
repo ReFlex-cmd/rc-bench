@@ -115,9 +115,9 @@ async def create_experiment(
     current_user: User = Depends(get_current_user)
 ):
     new_experiment = Experiment(
-        reservoir_type=experiment_data.reservoir_type,
-        dataset_name=experiment_data.dataset_name,
-        config=experiment_data.config,
+        reservoir_type=experiment_data.reservoir.type,
+        dataset_name=experiment_data.dataset.name,
+        config=experiment_data.model_dump(),
         status=ExperimentStatus.QUEUED,
         owner_id=current_user.id
     )
@@ -197,13 +197,19 @@ async def compare_experiments(
             "status": exp.status,
         }
         if exp.results:
-            r = exp.results[-1]
+            metrics = (exp.results[-1].result_data.get("metrics") or {})
             row.update({
-                "nrmse": r.nrmse,
-                "mse": r.mse,
-                "mae": r.mae,
-                "val_nrmse": r.val_nrmse,
-                "execution_time": r.execution_time,
+                "nrmse_range": metrics.get("nrmse_range"),
+                "nrmse_std": metrics.get("nrmse_std"),
+                "nrmse_var": metrics.get("nrmse_var"),
+                "rmse": metrics.get("rmse"),
+                "mse": metrics.get("mse"),
+                "mae": metrics.get("mae"),
+                "prediction_horizon": metrics.get("prediction_horizon"),
+                "val_nrmse_range": metrics.get("val_nrmse_range"),
+                "train_time": metrics.get("train_time"),
+                "inference_latency": metrics.get("inference_latency"),
+                "peak_memory": metrics.get("peak_memory"),
             })
         rows.append(row)
 
@@ -257,12 +263,12 @@ async def plot_experiment(
     if res is None:
         raise HTTPException(status_code=404, detail="Result not found")
 
-    meta = res.meta_data or {}
-    preds_path = meta.get("preds_path")
-    y_test_path = meta.get("y_test_path")
+    artifact_paths = (res.result_data or {}).get("artifact_paths", {})
+    preds_path = artifact_paths.get("preds")
+    y_test_path = artifact_paths.get("y_test")
 
     if not preds_path or not y_test_path:
-        raise HTTPException(status_code=404, detail="Prediction files not found in meta_data")
+        raise HTTPException(status_code=404, detail="Prediction files not found in result_data")
 
     preds_file = Path(preds_path)
     y_test_file = Path(y_test_path)

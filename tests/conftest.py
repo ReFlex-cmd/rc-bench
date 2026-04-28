@@ -7,7 +7,7 @@ from typing import AsyncGenerator
 #       httpx, pytest-asyncio и все зависимости rc_bench (см. pyproject.toml).
 
 
-@pytest.fixture(scope="session", autouse=False)
+@pytest.fixture(scope="function", autouse=False)
 async def _setup_db():
     """Создаём все таблицы перед тестами и дропаем после."""
     from sqlalchemy.ext.asyncio import create_async_engine

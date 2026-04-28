@@ -1,92 +1,120 @@
 import datetime
-from typing import Dict, Any, Optional, List
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, ConfigDict
+
 from rc_bench.models import ExperimentStatus
+from rc_bench.core.schema import (
+    ExperimentSpec,
+    DatasetSpec,
+    ReservoirSpec,
+    ProtocolSpec,
+    ReadoutSpec,
+    MetricsResult,
+    ResultSpec,
+)
+
+# Re-export core contracts so API layer has a single import point
+__all__ = [
+    "ExperimentSpec",
+    "DatasetSpec",
+    "ReservoirSpec",
+    "ProtocolSpec",
+    "ReadoutSpec",
+    "MetricsResult",
+    "ResultSpec",
+    "ExperimentCreate",
+    "ResultRead",
+    "ExperimentRead",
+    "UserCreate",
+    "UserRead",
+    "Token",
+    "TokenData",
+]
+
 
 # --------------------------------------------------------
-# Базовый класс (общие поля)
+# Experiment input — ExperimentSpec IS the create payload
 # --------------------------------------------------------
-class ExperimentBase(BaseModel):
-    reservoir_type: str = Field(..., description="Тип резервуара (ESN, LSM, etc.)")
-    dataset_name: str = Field(..., description="Название датасета (NARMA10, Lorenz)")
-    # Dict[str, Any] позволяет принимать любой JSON объект
-    config: Dict[str, Any] = Field(..., description="Параметры резервуара")
-
-# --------------------------------------------------------
-# Схема для СОЗДАНИЯ (то, что шлет юзер)
-# --------------------------------------------------------
-class ExperimentCreate(ExperimentBase):
-    """
-    Схема для создания эксперимента.
-    Содержит пример (example), который отобразится в Swagger UI.
-    """
+class ExperimentCreate(ExperimentSpec):
     model_config = ConfigDict(
         json_schema_extra={
             "examples": [
                 {
-                    "reservoir_type": "esn",
-                    "dataset_name": "narma10",
-                    "config": {
-                        "n_units": 500,
-                        "spectral_radius": 0.9,
-                        "input_scaling": 0.1,
-                        "seed": 42,
-                        "length": 5000
-                    }
+                    "dataset": {"name": "narma10", "length": 2000, "seed": 42},
+                    "reservoir": {
+                        "type": "esn",
+                        "params": {
+                            "n_units": 500,
+                            "spectral_radius": 0.9,
+                            "input_scaling": 0.1,
+                        },
+                    },
+                    "protocol": {"washout": 200},
+                    "readout": {"alpha_grid": [0.001, 0.01, 0.1, 1.0, 10.0]},
+                    "seed": 42,
                 }
             ]
         }
     )
-    
+
+
 # --------------------------------------------------------
-# Схема для РЕЗУЛЬТАТА (НОВАЯ)
+# Result read — maps from JSONB result_data
 # --------------------------------------------------------
 class ResultRead(BaseModel):
     id: int
-    nrmse: Optional[float]
-    mse: Optional[float]
-    mae: Optional[float]
-    val_nrmse: Optional[float]
-    execution_time: Optional[float]
-    meta_data: dict
+    result_data: Dict[str, Any]
 
     model_config = ConfigDict(from_attributes=True)
 
+    @property
+    def metrics(self) -> Optional[MetricsResult]:
+        m = self.result_data.get("metrics")
+        return MetricsResult(**m) if m else None
+
+    @property
+    def status(self) -> str:
+        return self.result_data.get("status", "unknown")
+
+
 # --------------------------------------------------------
-# Схема для ЧТЕНИЯ Эксперимента (ОБНОВЛЕННАЯ)
+# Experiment read
 # --------------------------------------------------------
-class ExperimentRead(ExperimentBase):
+class ExperimentRead(BaseModel):
     id: int
     created_at: datetime.datetime
     status: ExperimentStatus
-    
-    # Добавляем список результатов. 
-    # По умолчанию пустой список, если результатов нет.
-    results: List[ResultRead] = [] 
+    reservoir_type: str
+    dataset_name: str
+    config: Dict[str, Any]
+    results: List[ResultRead] = []
 
     model_config = ConfigDict(from_attributes=True)
 
+
 # --------------------------------------------------------
-# Схемы для ПОЛЬЗОВАТЕЛЕЙ (Auth)
+# Auth
 # --------------------------------------------------------
 class UserBase(BaseModel):
     email: str
 
+
 class UserCreate(UserBase):
-    password: str 
+    password: str
+
 
 class UserRead(UserBase):
     id: int
     is_active: bool
-    
+
     model_config = ConfigDict(from_attributes=True)
 
-# --------------------------------------------------------
-# Схемы для ТОКЕНА (JWT)
-# --------------------------------------------------------
+
 class Token(BaseModel):
     access_token: str
     token_type: str
+
 
 class TokenData(BaseModel):
     email: Optional[str] = None

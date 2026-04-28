@@ -1,7 +1,7 @@
 import enum
 import datetime
-from typing import Optional, List
-from sqlalchemy import String, ForeignKey, Float, DateTime, func
+from typing import List
+from sqlalchemy import String, ForeignKey, DateTime, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import Boolean 
@@ -71,20 +71,9 @@ class Result(Base):
     __tablename__ = "results"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    
-    # ForeignKey связывает эту таблицу с таблицей experiments.
     experiment_id: Mapped[int] = mapped_column(ForeignKey("experiments.id"))
-    
-    # Метрики. Optional[...] означает, что поле может быть NULL (например, если расчет упал).
-    # Но в успешном результате они должны быть.
-    nrmse: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    mse: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    mae: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    val_nrmse: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    execution_time: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    
-    # Сюда можно сложить пути к файлам графиков или дополнительные метрики
-    meta_data: Mapped[dict] = mapped_column(JSONB, default={})
 
-    # Обратная связь, чтобы из объекта Result можно было получить доступ к Experiment
+    # Typed result: serialized ResultSpec (status, metrics, artifact_paths, error)
+    result_data: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
     experiment: Mapped["Experiment"] = relationship(back_populates="results")

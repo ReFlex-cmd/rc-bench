@@ -7,6 +7,7 @@ TEST_PASSWORD = "strongpassword123"
 
 # Декоратор, говорящий pytest'у, что тест асинхронный
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_full_flow(client: AsyncClient):
     # ---------------------------------------------------------
     # 1. РЕГИСТРАЦИЯ

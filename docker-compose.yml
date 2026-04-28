@@ -65,8 +65,10 @@ services:
     volumes:
       - ./outputs:/app/outputs
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
 
   # -----------------------------------------------------------------

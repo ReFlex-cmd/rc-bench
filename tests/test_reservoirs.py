@@ -1,93 +1,134 @@
 import numpy as np
 import pytest
+from sklearn.preprocessing import StandardScaler
 
 from rc_bench.core.data_provider import get_data_for_experiment
-from rc_bench.core.reservoirs.esn_service import run_esn_experiment
-from rc_bench.core.reservoirs.lsm_service import run_lsm_experiment
-from rc_bench.core.reservoirs.fhn_service import run_fhn_experiment
-from rc_bench.core.reservoirs.logistic_service import run_logistic_experiment
+from rc_bench.core.schema import (
+    DatasetSpec, ExperimentSpec, ProtocolSpec, ReadoutSpec, ReservoirSpec,
+)
+from rc_bench.core.reservoirs.esn_service import ESNReservoir
+from rc_bench.core.reservoirs.lsm_service import LSMReservoir
+from rc_bench.core.reservoirs.fhn_service import FHNReservoir
+from rc_bench.core.reservoirs.logistic_service import LogisticReservoir
+from rc_bench.core.reservoirs.registry import get_reservoir, REGISTRY
+from rc_bench.runners.experiment_runner import run_experiment
 
-# Общие данные для всех тестов — маленький размер для скорости
 _DATA = get_data_for_experiment("narma10", length=600, seed=42)
-_EXPECTED_KEYS = {"metrics", "meta", "preds", "y_test"}
-_METRIC_KEYS = {"nrmse", "mae", "mse", "execution_time"}
+_EXPECTED_KEYS = {"metrics", "best_alpha", "preds", "y_test"}
+
+_SPECS = {
+    "esn": ExperimentSpec(
+        dataset=DatasetSpec(name="narma10"),
+        reservoir=ReservoirSpec(type="esn", params={"n_units": 50}),
+        protocol=ProtocolSpec(washout=50),
+        seed=42,
+    ),
+    "lsm": ExperimentSpec(
+        dataset=DatasetSpec(name="narma10"),
+        reservoir=ReservoirSpec(type="lsm", params={"units": 50, "density": 0.1, "dt": 1.0, "input_scale": 2.0, "tau_mem": 5.0}),
+        protocol=ProtocolSpec(washout=50),
+        seed=42,
+    ),
+    "fhn": ExperimentSpec(
+        dataset=DatasetSpec(name="narma10"),
+        reservoir=ReservoirSpec(type="fhn", params={"units": 30, "density": 0.1, "dt": 0.1, "internal_steps": 1}),
+        protocol=ProtocolSpec(washout=50),
+        seed=42,
+    ),
+    "logistic": ExperimentSpec(
+        dataset=DatasetSpec(name="narma10"),
+        reservoir=ReservoirSpec(type="logistic", params={"units": 50}),
+        protocol=ProtocolSpec(washout=50),
+        seed=42,
+    ),
+}
 
 
-class TestESN:
-    _config = {"n_units": 50, "seed": 42, "washout": 50}
+def _reservoir_config(spec: ExperimentSpec) -> dict:
+    return {"seed": spec.seed, **spec.reservoir.params}
+
+
+class _ReservoirTestBase:
+    rtype: str
+
+    @property
+    def spec(self) -> ExperimentSpec:
+        return _SPECS[self.rtype]
+
+    def _run(self):
+        reservoir = get_reservoir(self.rtype, _reservoir_config(self.spec))
+        return run_experiment(_DATA, self.spec, reservoir)
 
     def test_output_keys(self):
-        result = run_esn_experiment(_DATA, self._config)
+        result = self._run()
         assert set(result.keys()) == _EXPECTED_KEYS
-        assert set(result["metrics"].keys()) == _METRIC_KEYS
+
+    def test_metrics_typed(self):
+        from rc_bench.core.schema import MetricsResult
+        result = self._run()
+        assert isinstance(result["metrics"], MetricsResult)
 
     def test_deterministic(self):
-        r1 = run_esn_experiment(_DATA, self._config)
-        r2 = run_esn_experiment(_DATA, self._config)
-        assert r1["metrics"]["nrmse"] == r2["metrics"]["nrmse"]
+        r1 = self._run()
+        r2 = self._run()
+        assert r1["metrics"].nrmse_range == r2["metrics"].nrmse_range
 
-    def test_nrmse_is_finite_float(self):
-        result = run_esn_experiment(_DATA, self._config)
-        val = result["metrics"]["nrmse"]
+    def test_nrmse_range_is_finite_float(self):
+        val = self._run()["metrics"].nrmse_range
         assert isinstance(val, float)
         assert np.isfinite(val)
 
-
-class TestLSM:
-    _config = {"units": 50, "seed": 42, "washout": 50, "density": 0.1, "dt": 1.0}
-
-    def test_output_keys(self):
-        result = run_lsm_experiment(_DATA, self._config)
-        assert set(result.keys()) == _EXPECTED_KEYS
-        assert set(result["metrics"].keys()) == _METRIC_KEYS
-
-    def test_deterministic(self):
-        r1 = run_lsm_experiment(_DATA, self._config)
-        r2 = run_lsm_experiment(_DATA, self._config)
-        assert r1["metrics"]["nrmse"] == r2["metrics"]["nrmse"]
-
-    def test_nrmse_is_finite_float(self):
-        result = run_lsm_experiment(_DATA, self._config)
-        val = result["metrics"]["nrmse"]
-        assert isinstance(val, float)
-        assert np.isfinite(val)
+    def test_sanity_checks_pass(self):
+        spec = self.spec
+        reservoir = get_reservoir(self.rtype, _reservoir_config(spec))
+        X = _DATA["X_train"]
+        if reservoir.DEFAULT_SCALER == "zscore":
+            X = StandardScaler().fit_transform(X)
+        H = reservoir.transform(X)
+        for name, passed in reservoir.sanity_check(H).items():
+            assert passed, f"Sanity check failed: {name}"
 
 
-class TestFHN:
-    _config = {"units": 30, "seed": 42, "washout": 50, "density": 0.1, "dt": 0.1, "internal_steps": 1}
-
-    def test_output_keys(self):
-        result = run_fhn_experiment(_DATA, self._config)
-        assert set(result.keys()) == _EXPECTED_KEYS
-        assert set(result["metrics"].keys()) == _METRIC_KEYS
-
-    def test_deterministic(self):
-        r1 = run_fhn_experiment(_DATA, self._config)
-        r2 = run_fhn_experiment(_DATA, self._config)
-        assert r1["metrics"]["nrmse"] == r2["metrics"]["nrmse"]
-
-    def test_nrmse_is_finite_float(self):
-        result = run_fhn_experiment(_DATA, self._config)
-        val = result["metrics"]["nrmse"]
-        assert isinstance(val, float)
-        assert np.isfinite(val)
+class TestESN(_ReservoirTestBase):
+    rtype = "esn"
 
 
-class TestLogistic:
-    _config = {"units": 50, "seed": 42, "washout": 50}
+class TestLSM(_ReservoirTestBase):
+    rtype = "lsm"
 
-    def test_output_keys(self):
-        result = run_logistic_experiment(_DATA, self._config)
-        assert set(result.keys()) == _EXPECTED_KEYS
-        assert set(result["metrics"].keys()) == _METRIC_KEYS
 
-    def test_deterministic(self):
-        r1 = run_logistic_experiment(_DATA, self._config)
-        r2 = run_logistic_experiment(_DATA, self._config)
-        assert r1["metrics"]["nrmse"] == r2["metrics"]["nrmse"]
+class TestFHN(_ReservoirTestBase):
+    rtype = "fhn"
 
-    def test_nrmse_is_finite_float(self):
-        result = run_logistic_experiment(_DATA, self._config)
-        val = result["metrics"]["nrmse"]
-        assert isinstance(val, float)
-        assert np.isfinite(val)
+
+class TestLogistic(_ReservoirTestBase):
+    rtype = "logistic"
+
+
+class TestRegistry:
+    def test_all_types_registered(self):
+        assert set(REGISTRY) == {"esn", "lsm", "fhn", "logistic"}
+
+    def test_get_reservoir_returns_correct_class(self):
+        for rtype, cls in [("esn", ESNReservoir), ("lsm", LSMReservoir), ("fhn", FHNReservoir), ("logistic", LogisticReservoir)]:
+            assert isinstance(get_reservoir(rtype, _reservoir_config(_SPECS[rtype])), cls)
+
+    def test_unknown_type_raises(self):
+        with pytest.raises(ValueError, match="Unknown reservoir type"):
+            get_reservoir("unknown_type", {})
+
+    def test_case_insensitive(self):
+        assert isinstance(get_reservoir("ESN", _reservoir_config(_SPECS["esn"])), ESNReservoir)
+
+
+class TestExperimentSpec:
+    def test_config_hash_deterministic(self):
+        spec = _SPECS["esn"]
+        assert spec.config_hash() == spec.config_hash()
+
+    def test_config_hash_differs_for_different_specs(self):
+        assert _SPECS["esn"].config_hash() != _SPECS["lsm"].config_hash()
+
+    def test_reservoir_type_validation(self):
+        with pytest.raises(Exception):
+            ReservoirSpec(type="unknown_type", params={})
