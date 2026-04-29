@@ -176,7 +176,11 @@ def run_cmd(
     spec_file: Path = typer.Argument(..., help="Path to JSON or YAML ExperimentSpec file."),
     output: Optional[Path] = typer.Option(
         None, "--output", "-o",
-        help="Write run record (spec + metrics) to this JSON file.",
+        help="Write RunRecord (spec + metrics + metadata) to this JSON file.",
+    ),
+    artifacts: Optional[Path] = typer.Option(
+        None, "--artifacts", "-a",
+        help="Directory to save prediction artifacts (.npz).",
     ),
     seed: Optional[int] = typer.Option(
         None, "--seed", "-s",
@@ -186,6 +190,7 @@ def run_cmd(
     """Run an experiment (with optional HPO and multi-seed) from a spec file."""
     from rc_bench.core.data_provider import get_data_for_experiment
     from rc_bench.core.schema import ExperimentSpec
+    from rc_bench.reporting.run_record import RunRecord, save_run_record
     from rc_bench.runners.pipeline import run_pipeline
 
     if not spec_file.exists():
@@ -215,7 +220,7 @@ def run_cmd(
             length=spec.dataset.length,
             seed=spec.dataset.seed,
         )
-        result_spec = run_pipeline(data, spec)
+        result_spec = run_pipeline(data, spec, artifact_dir=artifacts)
     except Exception as exc:
         console.print(f"[red]Run failed:[/red] {exc}")
         raise typer.Exit(1)
@@ -223,9 +228,8 @@ def run_cmd(
     _print_result(result_spec)
 
     if output is not None:
-        record = {"spec": spec.model_dump(), "result": result_spec.model_dump()}
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(json.dumps(record, indent=2, default=str))
+        record = RunRecord.make(spec, result_spec)
+        save_run_record(record, output)
         console.print(f"[green]Saved →[/green] {output}")
 
 
@@ -312,6 +316,66 @@ def aggregate(
         t.add_row(*[_fmt(r[col]) for col in ["file", "reservoir", "dataset", "seed", "status"] + METRIC_COLS])
 
     console.print(t)
+
+
+# ---------------------------------------------------------------------------
+# report
+# ---------------------------------------------------------------------------
+
+@app.command("report")
+def report_cmd(
+    results_dir: Path = typer.Argument(
+        ..., help="Directory containing run-record JSON files (*.json)."
+    ),
+    output_dir: Optional[Path] = typer.Option(
+        None, "--output-dir",
+        help="Where to write report.md, report.csv, comparison.png. Defaults to results_dir.",
+    ),
+    metric: str = typer.Option(
+        "nrmse_range", "--metric",
+        help="Metric used for sorting and the comparison bar chart.",
+    ),
+    no_plots: bool = typer.Option(
+        False, "--no-plots", help="Skip matplotlib plot generation."
+    ),
+) -> None:
+    """Generate a Markdown/CSV report and comparison plot from run-record JSON files."""
+    from rc_bench.reporting.report import generate_report
+    from rc_bench.reporting.run_record import load_run_record
+
+    if not results_dir.is_dir():
+        console.print(f"[red]Not a directory:[/red] {results_dir}")
+        raise typer.Exit(1)
+
+    files = sorted(results_dir.glob("*.json"))
+    if not files:
+        console.print(f"[yellow]No JSON files found in {results_dir}[/yellow]")
+        raise typer.Exit(0)
+
+    records = []
+    for f in files:
+        try:
+            records.append(load_run_record(f))
+        except Exception as exc:
+            console.print(f"[yellow]Skipping {f.name}:[/yellow] {exc}")
+
+    if not records:
+        console.print("[yellow]No valid run records found.[/yellow]")
+        raise typer.Exit(0)
+
+    out = output_dir or results_dir
+    generate_report(records, out, sort_metric=metric)
+    console.print(f"[green]report.md[/green] → {out / 'report.md'}")
+    console.print(f"[green]report.csv[/green] → {out / 'report.csv'}")
+
+    if not no_plots:
+        try:
+            from rc_bench.reporting.plots import plot_metric_bar
+            bar_path = out / f"comparison_{metric}.png"
+            plot_metric_bar(records, metric=metric, output_path=bar_path)
+            console.print(f"[green]{bar_path.name}[/green] → {bar_path}")
+        except Exception as exc:
+            console.print(f"[yellow]Plot skipped:[/yellow] {exc}")
 
 
 # ---------------------------------------------------------------------------

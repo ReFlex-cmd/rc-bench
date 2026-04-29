@@ -1,11 +1,15 @@
+from pathlib import Path
+
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 class Settings(BaseSettings):
     # Pydantic сам найдет эти переменные в .env
     POSTGRES_USER: str
     POSTGRES_PASSWORD: str
     POSTGRES_DB: str
-    
+
     DB_HOST: str = "localhost"
     DB_PORT: int = 5432
 
@@ -14,6 +18,10 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+
+    # Directory where the Celery worker saves prediction artifacts (.npz).
+    # Override via ARTIFACT_DIR env var or in .env.
+    ARTIFACT_DIR: Path = Field(default=Path("./outputs/artifacts"))
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

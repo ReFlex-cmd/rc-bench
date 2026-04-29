@@ -1,6 +1,6 @@
 import io
 from pathlib import Path
-from typing import List
+from typing import Dict, List, Tuple
 
 from datetime import timedelta
 from fastapi import FastAPI, Depends, HTTPException, Query, status
@@ -24,6 +24,27 @@ from rc_bench.schemas import ExperimentCreate, ExperimentRead, UserCreate, UserR
 from rc_bench.tasks import run_experiment_task
 
 app = FastAPI(title="RC-Bench API", version="0.1.0")
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _load_predictions_from_artifact(
+    artifact_paths: Dict[str, str],
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Load (y_test, y_pred) from the predictions.npz artifact saved by run_pipeline.
+
+    Raises FileNotFoundError with a descriptive message on any failure.
+    """
+    npz_path_str = artifact_paths.get("predictions")
+    if not npz_path_str:
+        raise FileNotFoundError("'predictions' key not found in artifact_paths")
+    npz_path = Path(npz_path_str)
+    if not npz_path.exists():
+        raise FileNotFoundError(f"Predictions file missing on disk: {npz_path}")
+    arrays = np.load(npz_path)
+    return arrays["y_test"], arrays["y_pred"]
 
 # URL для получения токена (Swagger использует его для кнопки Authorize)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -264,20 +285,10 @@ async def plot_experiment(
         raise HTTPException(status_code=404, detail="Result not found")
 
     artifact_paths = (res.result_data or {}).get("artifact_paths", {})
-    preds_path = artifact_paths.get("preds")
-    y_test_path = artifact_paths.get("y_test")
-
-    if not preds_path or not y_test_path:
-        raise HTTPException(status_code=404, detail="Prediction files not found in result_data")
-
-    preds_file = Path(preds_path)
-    y_test_file = Path(y_test_path)
-
-    if not preds_file.exists() or not y_test_file.exists():
-        raise HTTPException(status_code=404, detail="Prediction files missing on disk")
-
-    preds = np.load(preds_file)
-    y_test = np.load(y_test_file)
+    try:
+        y_test, preds = _load_predictions_from_artifact(artifact_paths)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
     fig, ax = plt.subplots(figsize=(12, 4))
     ax.plot(y_test, label="y_test", linewidth=0.8)
