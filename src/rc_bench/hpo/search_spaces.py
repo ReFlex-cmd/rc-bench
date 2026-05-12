@@ -23,12 +23,12 @@ import optuna
 _SpaceEntry = Tuple[str, float, float]
 
 SEARCH_SPACES: Dict[str, Dict[str, _SpaceEntry]] = {
+    # Classical Jaeger-style ESN: leak rate fixed to 1.0 in the model (not tuned).
     "esn": {
         "spectral_radius":   ("float",     0.1,  1.5),
         "input_scaling":     ("float_log", 0.01, 2.0),
-        "lr":                ("float",     0.1,  1.0),
-        "rc_connectivity":   ("float_log", 0.01, 0.5),
-        "readout_alpha":     ("float_log", 1e-4, 10.0),
+        "rc_connectivity":   ("float_log", 0.01, 0.20),
+        "readout_alpha":     ("float_log", 1e-6, 1e+2),
     },
     "fhn": {
         "sr":                ("float",     0.1,  1.5),
@@ -45,18 +45,18 @@ SEARCH_SPACES: Dict[str, Dict[str, _SpaceEntry]] = {
         "readout_alpha":     ("float_log", 1e-4, 10.0),
     },
     "logistic": {
-        "r_min":             ("float",     3.5,  3.95),
-        "r_max":             ("float",     3.8,  4.0),
-        "input_scale":       ("float_log", 0.005, 0.5),
-        "coupling":          ("float_log", 0.01, 0.5),
-        "readout_alpha":     ("float_log", 1e-4, 10.0),
+        "r_min":             ("float",     3.7,  3.85),
+        "r_max":             ("float",     3.9,  3.99),
+        "input_scale":       ("float_log", 0.01, 5.0),
+        "coupling":          ("float_log", 0.001, 1.0),
+        "readout_alpha":     ("float_log", 1e-6, 1e+2),
     },
     "leaky_esn": {
         "sr":                ("float",     0.1,  1.5),
         "leak_rate":         ("float",     0.05, 1.0),
         "input_scaling":     ("float_log", 0.01, 2.0),
-        "density":           ("float_log", 0.01, 0.5),
-        "readout_alpha":     ("float_log", 1e-4, 10.0),
+        "density":           ("float_log", 0.01, 0.20),
+        "readout_alpha":     ("float_log", 1e-6, 1e+2),
     },
     "deep_esn": {
         "n_layers":          ("int",       2,    5),
