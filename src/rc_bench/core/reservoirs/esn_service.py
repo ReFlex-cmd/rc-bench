@@ -5,6 +5,14 @@ from .base import BaseReservoir
 
 
 class ESNReservoir(BaseReservoir):
+    """Classical Jaeger-style Echo State Network (no leak, dense W_in).
+
+    Wraps ``reservoirpy.nodes.Reservoir`` with Jaeger-style defaults:
+    - ``lr = 1.0`` (no leaky integration; use LeakyESNReservoir for that),
+    - ``input_connectivity = 1.0`` (dense W_in),
+    - sparse W_rec controlled by ``rc_connectivity``.
+    """
+
     DEFAULT_SCALER = "none"
 
     def _build(self, config: Dict[str, Any]) -> None:
@@ -15,7 +23,7 @@ class ESNReservoir(BaseReservoir):
             sr=config.get("spectral_radius", 0.9),
             input_scaling=config.get("input_scaling", 0.5),
             rc_connectivity=config.get("rc_connectivity", 0.1),
-            input_connectivity=config.get("input_connectivity", 0.1),
+            input_connectivity=config.get("input_connectivity", 1.0),
             seed=config.get("seed", 42),
         )
 
@@ -23,7 +31,10 @@ class ESNReservoir(BaseReservoir):
         return self._res.run(X)
 
     def sanity_check(self, H: np.ndarray) -> Dict[str, bool]:
-        return {"bounded_states": bool(np.max(np.abs(H)) < 1e6)}
+        return {
+            "bounded_states": bool(np.max(np.abs(H)) < 1e6),
+            "non_trivial_variance": bool(H.std() > 1e-6),
+        }
 
     # ------------------------------------------------------------------
     # Step API — uses reservoirpy's stateful run() for continuity

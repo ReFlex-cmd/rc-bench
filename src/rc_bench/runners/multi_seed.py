@@ -33,10 +33,14 @@ def run_multi_seed(
         result = run_experiment(data, spec, reservoir)
         metrics_list.append(result["metrics"])
 
+    # Sample std (ddof=1) — variance estimator across seeds. Per audit/03 §3.3.2:
+    # methodologically standard for reporting estimator variability in literature.
+    # ddof=1 requires n_seeds ≥ 2; for n=1, fall back to 0 to avoid NaN.
+    std_ddof = 1 if n_seeds > 1 else 0
     return MultiSeedResult(
         n_seeds=n_seeds,
         seeds=seeds,
         metrics_per_seed=metrics_list,
         mean=MetricsSummary.from_metrics_list(metrics_list, lambda xs: float(np.mean(xs))),
-        std=MetricsSummary.from_metrics_list(metrics_list, lambda xs: float(np.std(xs, ddof=0))),
+        std=MetricsSummary.from_metrics_list(metrics_list, lambda xs: float(np.std(xs, ddof=std_ddof))),
     )

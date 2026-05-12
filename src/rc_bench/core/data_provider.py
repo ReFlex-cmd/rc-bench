@@ -1,6 +1,5 @@
 import numpy as np
 from typing import Any, Dict, Tuple
-from sklearn.preprocessing import StandardScaler
 
 DATASET_CATALOG: Dict[str, Dict[str, Any]] = {
     "narma10": {
@@ -46,7 +45,18 @@ def generate_narma10(T: int, seed: int = 42) -> Tuple[np.ndarray, np.ndarray]:
 
 
 def generate_narma30(T: int, seed: int = 42) -> Tuple[np.ndarray, np.ndarray]:
-    # beta scaled by 10/30 so per-element contribution matches NARMA10 and prevents divergence
+    """NARMA-30 with stabilized β.
+
+    DEVIATION FROM Atiya & Parlos 2000: β is scaled by 10/30 (=0.05/3) so that
+    the cumulative sum-term contribution matches NARMA-10. Without this, the
+    standard β=0.05 NARMA-30 with u ∼ U(0, 0.5) regularly diverges. This is a
+    common stabilization in the RC literature but is NOT the canonical formula —
+    NRMSE numbers reported here cannot be compared one-to-one against
+    publications using β=0.05 with input clipping/squashing.
+
+    Documented in audit/05_open_questions.md Q2 (decision 2026-05-13: keep
+    stabilized β/3 with explicit disclosure in chapter 4 «Datasets and protocol»).
+    """
     rng = np.random.default_rng(seed)
     u = rng.uniform(0.0, 0.5, size=T)
     y = np.zeros(T, dtype=float)
@@ -156,8 +166,15 @@ def get_data_for_experiment(
     train_frac: float = 0.6,
     val_frac: float = 0.2,
     seed: int = 42,
-    scaler_name: str = "zscore",
+    scaler_name: str | None = None,  # noqa: ARG001 — kept for back-compat
 ) -> Dict[str, np.ndarray]:
+    """Generate raw splits for a benchmark dataset.
+
+    Per audit/03 §3.6.4: scaling is the runner's responsibility (driven by
+    ``BaseReservoir.DEFAULT_SCALER``), not the data provider's. The
+    ``scaler_name`` parameter is accepted but ignored, kept only for
+    backward-compatibility with existing callers/configs.
+    """
     key = dataset_name.lower()
     gen = _GENERATORS.get(key)
     if gen is None:
@@ -171,12 +188,6 @@ def get_data_for_experiment(
     X_train, y_train = X[:n_train],              y[:n_train]
     X_val,   y_val   = X[n_train:n_train+n_val], y[n_train:n_train+n_val]
     X_test,  y_test  = X[n_train+n_val:],        y[n_train+n_val:]
-
-    if scaler_name.lower() == "zscore":
-        scaler = StandardScaler()
-        X_train = scaler.fit_transform(X_train)
-        X_val   = scaler.transform(X_val)
-        X_test  = scaler.transform(X_test)
 
     return {
         "X_train": X_train, "y_train": y_train,

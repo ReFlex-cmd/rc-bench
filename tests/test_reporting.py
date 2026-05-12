@@ -33,7 +33,7 @@ _DATA = get_data_for_experiment("narma10", length=_T, seed=42)
 _SPEC = ExperimentSpec(
     dataset=DatasetSpec(name="narma10", length=_T),
     reservoir=ReservoirSpec(type="esn", params={"units": 20}),
-    protocol=ProtocolSpec(washout=20, train_frac=0.6, val_frac=0.2),
+    protocol=ProtocolSpec(washout=20, train_frac=0.6, val_frac=0.2, n_seeds=1),
     readout=ReadoutSpec(alpha_grid=[0.01, 0.1, 1.0]),
     seed=42,
 )
@@ -350,7 +350,7 @@ class TestCLIReport:
         spec_data = {
             "dataset": {"name": "narma10", "length": 300},
             "reservoir": {"type": "esn", "params": {"units": 20}},
-            "protocol": {"washout": 20, "train_frac": 0.6, "val_frac": 0.2},
+            "protocol": {"washout": 20, "train_frac": 0.6, "val_frac": 0.2, "n_seeds": 1},
             "readout": {"alpha_grid": [0.01, 0.1, 1.0]},
             "seed": 42,
         }
@@ -376,7 +376,7 @@ class TestCLIReport:
         spec_data = {
             "dataset": {"name": "narma10", "length": 300},
             "reservoir": {"type": "esn", "params": {"units": 20}},
-            "protocol": {"washout": 20, "train_frac": 0.6, "val_frac": 0.2},
+            "protocol": {"washout": 20, "train_frac": 0.6, "val_frac": 0.2, "n_seeds": 1},
             "readout": {"alpha_grid": [0.01, 0.1, 1.0]},
             "seed": 42,
         }

@@ -17,7 +17,9 @@ runner = CliRunner()
 _ESN_SPEC = {
     "dataset": {"name": "narma10", "length": 400, "seed": 42},
     "reservoir": {"type": "esn", "params": {"n_units": 30}},
-    "protocol": {"washout": 20},
+    # n_seeds=1 forces the single-run branch where result.metrics is populated;
+    # multi-seed CLI tests should add it explicitly when needed.
+    "protocol": {"washout": 20, "n_seeds": 1},
     "seed": 42,
 }
 

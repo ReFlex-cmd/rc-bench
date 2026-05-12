@@ -2,27 +2,44 @@
 Optuna-based hyperparameter optimisation for RC-Bench.
 
 Pipeline (Variant A):
-    best_params, best_score = run_hpo(spec, data, n_trials, seed)
-    final_spec = apply_hpo_params(spec, best_params)
+    hpo = run_hpo(spec, data, n_trials, seed)
+    final_spec = apply_hpo_params(spec, hpo.best_params)
     result = run_experiment(data, final_spec, reservoir)
+
+``run_hpo`` returns an ``HPOResult`` carrying:
+    - best_params      : structured params dict (reservoir_params + readout_alpha)
+    - best_score       : final best val_nrmse_range
+    - convergence      : best-so-far val_nrmse_range after each completed trial
+                         (used for the hpo_convergence_<model>_<task>.png plots,
+                         see ТЗ §5.2 / audit/03 §3.7.3)
+    - diagnostics      : counters {n_trials, n_completed, n_pruned, n_failed,
+                                   best_trial_number}
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List, Optional
 
 import optuna
+from pydantic import BaseModel, Field
 
-from rc_bench.core.reservoirs.registry import get_reservoir
 from rc_bench.core.schema import ExperimentSpec, ReadoutSpec
 from rc_bench.hpo.search_spaces import params_from_trial, suggest_params
 from rc_bench.runners.experiment_runner import run_experiment
+from rc_bench.core.reservoirs.registry import get_reservoir
 
 # Silence Optuna's own logging; rc-bench uses warnings/print for UX
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 logger = logging.getLogger(__name__)
+
+
+class HPOResult(BaseModel):
+    best_params: Dict[str, Any]
+    best_score: float
+    convergence: List[float] = Field(default_factory=list)
+    diagnostics: Dict[str, int] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -33,28 +50,18 @@ def run_hpo(
     spec: ExperimentSpec,
     data: Dict[str, Any],
     n_trials: int,
-    seed: int | None = None,
-) -> Tuple[Dict[str, Any], float]:
+    seed: Optional[int] = None,
+) -> HPOResult:
     """Search for the best hyperparameters using Optuna TPE + MedianPruner.
-
-    Parameters
-    ----------
-    spec     : base ExperimentSpec (not mutated)
-    data     : pre-split data dict from get_data_for_experiment()
-    n_trials : number of Optuna trials
-    seed     : RNG seed for the Optuna sampler (defaults to spec.seed)
 
     Returns
     -------
-    best_params : dict with keys "reservoir_params" and "readout_alpha"
-    best_score  : best val_nrmse_range achieved
+    HPOResult — see module docstring.
     """
     if seed is None:
         seed = spec.seed
 
     sampler = optuna.samplers.TPESampler(seed=seed)
-    # MedianPruner: startup_trials complete without pruning, then prune
-    # trials whose reported value exceeds the median of completed trials.
     pruner = optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=0)
 
     study = optuna.create_study(
@@ -62,15 +69,45 @@ def run_hpo(
         sampler=sampler,
         pruner=pruner,
     )
+
+    # Stateful trackers populated by the callback below.
+    convergence: List[float] = []
+    counters = {"n_completed": 0, "n_pruned": 0, "n_failed": 0}
+
+    def _callback(study_: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
+        if trial.state == optuna.trial.TrialState.COMPLETE:
+            counters["n_completed"] += 1
+            convergence.append(float(study_.best_value))
+            logger.debug(
+                "Trial %d | val_nrmse_range=%.5f | best=%.5f",
+                trial.number, trial.value, study_.best_value,
+            )
+        elif trial.state == optuna.trial.TrialState.PRUNED:
+            counters["n_pruned"] += 1
+        elif trial.state == optuna.trial.TrialState.FAIL:
+            counters["n_failed"] += 1
+
     study.optimize(
         lambda trial: _objective(trial, spec, data),
         n_trials=n_trials,
         show_progress_bar=False,
-        callbacks=[_log_callback],
+        callbacks=[_callback],
     )
 
     best_params = params_from_trial(study.best_trial.params, spec.reservoir.type)
-    return best_params, float(study.best_trial.value)
+    diagnostics = {
+        "n_trials":          n_trials,
+        "n_completed":       counters["n_completed"],
+        "n_pruned":          counters["n_pruned"],
+        "n_failed":          counters["n_failed"],
+        "best_trial_number": int(study.best_trial.number),
+    }
+    return HPOResult(
+        best_params=best_params,
+        best_score=float(study.best_trial.value),
+        convergence=convergence,
+        diagnostics=diagnostics,
+    )
 
 
 def apply_hpo_params(
@@ -124,16 +161,3 @@ def _objective(
         raise optuna.TrialPruned()
 
     return val_score
-
-
-def _log_callback(
-    study: optuna.Study,
-    trial: optuna.trial.FrozenTrial,
-) -> None:
-    if trial.state == optuna.trial.TrialState.COMPLETE:
-        logger.debug(
-            "Trial %d | val_nrmse_range=%.5f | best=%.5f",
-            trial.number,
-            trial.value,
-            study.best_value,
-        )

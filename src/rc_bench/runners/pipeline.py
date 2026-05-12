@@ -36,16 +36,21 @@ def run_pipeline(
        (single-seed only) and populates ResultSpec.artifact_paths.
     """
     hpo_best_params = None
+    hpo_convergence = None
+    hpo_diagnostics = None
 
     if spec.protocol.use_hpo:
         from rc_bench.hpo.tuner import apply_hpo_params, run_hpo
 
-        hpo_best_params, _ = run_hpo(
+        hpo = run_hpo(
             spec,
             data,
             n_trials=spec.protocol.hpo_budget,
             seed=spec.seed,
         )
+        hpo_best_params = hpo.best_params
+        hpo_convergence = hpo.convergence
+        hpo_diagnostics = hpo.diagnostics
         spec = apply_hpo_params(spec, hpo_best_params)
 
     n_seeds = spec.protocol.n_seeds
@@ -58,6 +63,8 @@ def run_pipeline(
             metrics=None,               # use multi_seed_result.mean for reporting
             multi_seed_result=multi_seed_result,
             hpo_best_params=hpo_best_params,
+            hpo_convergence=hpo_convergence,
+            hpo_diagnostics=hpo_diagnostics,
         )
     else:
         reservoir_config = {"seed": spec.seed, **spec.reservoir.params}
@@ -80,5 +87,7 @@ def run_pipeline(
             config_hash=spec.config_hash(),
             metrics=result["metrics"],
             hpo_best_params=hpo_best_params,
+            hpo_convergence=hpo_convergence,
+            hpo_diagnostics=hpo_diagnostics,
             artifact_paths=artifact_paths,
         )

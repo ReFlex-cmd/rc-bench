@@ -25,9 +25,10 @@ class ProtocolSpec(BaseModel):
     horizon: int = 1      # steps ahead; only used when forecasting_mode == "fixed_horizon"
     # Stage 8: HPO
     use_hpo: bool = False
-    hpo_budget: int = 20  # number of Optuna trials
-    # Stage 8: multi-seed (set n_seeds > 1 to enable; 5 recommended)
-    n_seeds: int = 1
+    # Per ТЗ §2: minimum 50, target 100 trials per (model, task) cell.
+    hpo_budget: int = 100
+    # Stage 8: multi-seed. Per ТЗ §3: target 10, minimum 5.
+    n_seeds: int = 10
 
 
 class ReadoutSpec(BaseModel):
@@ -111,5 +112,10 @@ class ResultSpec(BaseModel):
     metrics: Optional[MetricsResult] = None
     multi_seed_result: Optional[MultiSeedResult] = None
     hpo_best_params: Optional[Dict[str, Any]] = None
+    # Best-so-far val_nrmse_range after each completed trial; used for the
+    # hpo_convergence_<model>_<task>.png plots required by ТЗ §5.2.
+    hpo_convergence: Optional[List[float]] = None
+    # HPO accounting (n_completed/n_pruned/n_failed/best_trial_number) — see audit/03 §3.7.3.
+    hpo_diagnostics: Optional[Dict[str, int]] = None
     artifact_paths: Dict[str, str] = Field(default_factory=dict)
     error: Optional[str] = None

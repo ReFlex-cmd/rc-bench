@@ -27,9 +27,13 @@ _DATA = get_data_for_experiment("narma10", length=_T, seed=42)
 
 _BASE_SPEC = ExperimentSpec(
     dataset=DatasetSpec(name="narma10", length=_T),
-    reservoir=ReservoirSpec(type="fhn", params={"units": 20, "density": 0.1,
-                                                 "dt": 0.1, "internal_steps": 1}),
-    protocol=ProtocolSpec(washout=20, train_frac=0.6, val_frac=0.2),
+    # ESN: numerically robust enough that HPO with n_trials=3 reliably
+    # produces at least one completed trial. FHN/LSM trial sweeps can NaN-out
+    # at small budgets and leave the study with no best_trial.
+    reservoir=ReservoirSpec(type="esn", params={"n_units": 30}),
+    # Explicit n_seeds=1 so default tests exercise the single-run code path.
+    # Multi-seed tests override n_seeds via _spec(n_seeds=...).
+    protocol=ProtocolSpec(washout=20, train_frac=0.6, val_frac=0.2, n_seeds=1),
     readout=ReadoutSpec(alpha_grid=[0.01, 0.1, 1.0]),
     seed=42,
 )
@@ -92,45 +96,58 @@ class TestSearchSpaces:
 # ---------------------------------------------------------------------------
 
 class TestRunHPO:
-    def test_returns_tuple(self):
-        best_params, best_score = run_hpo(_BASE_SPEC, _DATA, n_trials=3, seed=0)
-        assert isinstance(best_params, dict)
-        assert isinstance(best_score, float)
+    def test_returns_hpo_result(self):
+        result = run_hpo(_BASE_SPEC, _DATA, n_trials=3, seed=0)
+        assert isinstance(result.best_params, dict)
+        assert isinstance(result.best_score, float)
 
     def test_best_score_finite_and_positive(self):
-        _, best_score = run_hpo(_BASE_SPEC, _DATA, n_trials=3, seed=0)
-        assert np.isfinite(best_score)
-        assert best_score >= 0.0
+        result = run_hpo(_BASE_SPEC, _DATA, n_trials=3, seed=0)
+        assert np.isfinite(result.best_score)
+        assert result.best_score >= 0.0
 
     def test_best_params_structure(self):
-        best_params, _ = run_hpo(_BASE_SPEC, _DATA, n_trials=3, seed=0)
-        assert "reservoir_params" in best_params
-        assert "readout_alpha" in best_params
-        assert best_params["readout_alpha"] > 0
+        result = run_hpo(_BASE_SPEC, _DATA, n_trials=3, seed=0)
+        assert "reservoir_params" in result.best_params
+        assert "readout_alpha" in result.best_params
+        assert result.best_params["readout_alpha"] > 0
 
     def test_deterministic_with_same_seed(self):
-        p1, s1 = run_hpo(_BASE_SPEC, _DATA, n_trials=3, seed=7)
-        p2, s2 = run_hpo(_BASE_SPEC, _DATA, n_trials=3, seed=7)
-        assert s1 == s2
+        r1 = run_hpo(_BASE_SPEC, _DATA, n_trials=3, seed=7)
+        r2 = run_hpo(_BASE_SPEC, _DATA, n_trials=3, seed=7)
+        assert r1.best_score == r2.best_score
 
     def test_different_seeds_may_differ(self):
-        _, s1 = run_hpo(_BASE_SPEC, _DATA, n_trials=6, seed=1)
-        _, s2 = run_hpo(_BASE_SPEC, _DATA, n_trials=6, seed=99)
-        # Not guaranteed to differ, but almost certain with different seeds
-        # Just check both are valid
-        assert np.isfinite(s1) and np.isfinite(s2)
+        r1 = run_hpo(_BASE_SPEC, _DATA, n_trials=6, seed=1)
+        r2 = run_hpo(_BASE_SPEC, _DATA, n_trials=6, seed=99)
+        assert np.isfinite(r1.best_score) and np.isfinite(r2.best_score)
+
+    def test_convergence_history_recorded(self):
+        result = run_hpo(_BASE_SPEC, _DATA, n_trials=4, seed=0)
+        # Convergence is best-so-far per completed trial; length ≤ n_trials
+        assert isinstance(result.convergence, list)
+        assert len(result.convergence) <= 4
+        # Best-so-far must be monotonically non-increasing
+        for prev, curr in zip(result.convergence, result.convergence[1:]):
+            assert curr <= prev + 1e-12
+
+    def test_diagnostics_counters(self):
+        result = run_hpo(_BASE_SPEC, _DATA, n_trials=4, seed=0)
+        d = result.diagnostics
+        assert d["n_trials"] == 4
+        assert d["n_completed"] + d["n_pruned"] + d["n_failed"] <= 4
+        assert d["best_trial_number"] >= 0
 
     def test_apply_hpo_params_updates_spec(self):
-        best_params, _ = run_hpo(_BASE_SPEC, _DATA, n_trials=3, seed=0)
-        new_spec = apply_hpo_params(_BASE_SPEC, best_params)
-        # readout alpha_grid must contain exactly the tuned alpha
+        result = run_hpo(_BASE_SPEC, _DATA, n_trials=3, seed=0)
+        new_spec = apply_hpo_params(_BASE_SPEC, result.best_params)
         assert len(new_spec.readout.alpha_grid) == 1
-        assert new_spec.readout.alpha_grid[0] == best_params["readout_alpha"]
+        assert new_spec.readout.alpha_grid[0] == result.best_params["readout_alpha"]
 
     def test_apply_hpo_params_does_not_mutate_original(self):
-        best_params, _ = run_hpo(_BASE_SPEC, _DATA, n_trials=3, seed=0)
+        result = run_hpo(_BASE_SPEC, _DATA, n_trials=3, seed=0)
         original_alpha_grid = list(_BASE_SPEC.readout.alpha_grid)
-        apply_hpo_params(_BASE_SPEC, best_params)
+        apply_hpo_params(_BASE_SPEC, result.best_params)
         assert list(_BASE_SPEC.readout.alpha_grid) == original_alpha_grid
 
 

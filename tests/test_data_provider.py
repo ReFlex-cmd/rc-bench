@@ -193,10 +193,12 @@ class TestGetDataForExperiment:
         assert data["X_train"].ndim == 2
         assert data["X_train"].shape[1] == 1
 
-    def test_zscore_scaling_applied(self):
-        data = get_data_for_experiment("narma10", length=1000, scaler_name="zscore")
-        assert abs(data["X_train"].mean()) < 0.1
-        assert abs(data["X_train"].std() - 1.0) < 0.1
+    def test_data_returned_unscaled(self):
+        """data_provider returns raw splits; scaling is the runner's job (audit/03 §3.6.4)."""
+        data = get_data_for_experiment("narma10", length=1000)
+        # NARMA-10 input ∼ U(0, 0.5): mean ≈ 0.25, std ≈ 0.144 — NOT z-scored.
+        assert 0.15 < data["X_train"].mean() < 0.35
+        assert data["X_train"].std() > 0.05  # not flattened to ~1.0 either
 
     def test_unknown_dataset_raises(self):
         with pytest.raises(ValueError, match="Unknown dataset"):
