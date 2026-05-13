@@ -148,11 +148,17 @@ def run_experiment(
         peak_memory=peak_bytes,
     )
 
+    # Diagnostic: train-set reservoir state std. Used by HPO to detect
+    # degenerate reservoirs (H≈0, e.g. LSM with v_th too high to ever spike)
+    # — see audit/_diag_seed.py and audit/03 §3.7.3.
+    reservoir_states_std = float(np.asarray(H_train_full).std())
+
     return {
         "metrics": metrics,
         "best_alpha": best_alpha,
         "preds": y_test_pred,
         "y_test": y_te,
+        "reservoir_states_std": reservoir_states_std,
     }
 
 

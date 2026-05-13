@@ -1,0 +1,209 @@
+{
+  "spec": {
+    "dataset": {
+      "name": "narma10",
+      "length": 2000,
+      "seed": 42
+    },
+    "reservoir": {
+      "type": "qrc",
+      "params": {}
+    },
+    "protocol": {
+      "washout": 200,
+      "train_frac": 0.6,
+      "val_frac": 0.2,
+      "forecasting_mode": "one_step",
+      "horizon": 1,
+      "use_hpo": true,
+      "hpo_budget": 50,
+      "n_seeds": 5
+    },
+    "readout": {
+      "type": "ridge",
+      "alpha_grid": [
+        1.0
+      ]
+    },
+    "seed": 42
+  },
+  "result": {
+    "status": "completed",
+    "config_hash": "652f08c2b8b56b89",
+    "metrics": null,
+    "multi_seed_result": {
+      "n_seeds": 5,
+      "seeds": [
+        42,
+        43,
+        44,
+        45,
+        46
+      ],
+      "metrics_per_seed": [
+        {
+          "rmse": 0.058955257431885594,
+          "nrmse_range": 0.10123186189494524,
+          "nrmse_std": 0.5131425352338032,
+          "nrmse_var": 0.26331526146617495,
+          "mae": 0.04573807252204269,
+          "mse": 0.003475722378859902,
+          "prediction_horizon": 0,
+          "val_nrmse_range": 0.12657922052700726,
+          "train_time": 0.15237327799877676,
+          "inference_latency": 0.032559250999838696,
+          "peak_memory": 9039734
+        },
+        {
+          "rmse": 0.06340386291406806,
+          "nrmse_range": 0.10887054647397021,
+          "nrmse_std": 0.551862893600816,
+          "nrmse_var": 0.3045526533334656,
+          "mae": 0.049895817328128256,
+          "mse": 0.004020049832425936,
+          "prediction_horizon": 2,
+          "val_nrmse_range": 0.13790534564649384,
+          "train_time": 0.2831918029987719,
+          "inference_latency": 0.054640391001157695,
+          "peak_memory": 9039372
+        },
+        {
+          "rmse": 0.0631281136828138,
+          "nrmse_range": 0.10839705845420844,
+          "nrmse_std": 0.549462791120082,
+          "nrmse_var": 0.3019093588254709,
+          "mae": 0.04889461660504812,
+          "mse": 0.003985158737150264,
+          "prediction_horizon": 2,
+          "val_nrmse_range": 0.13337424981778842,
+          "train_time": 0.13723107000078016,
+          "inference_latency": 0.03207989399925282,
+          "peak_memory": 9039326
+        },
+        {
+          "rmse": 0.06502044553533623,
+          "nrmse_range": 0.11164637471705882,
+          "nrmse_std": 0.5659335183563922,
+          "nrmse_var": 0.32028074719924493,
+          "mae": 0.04997388765719824,
+          "mse": 0.004227658337613626,
+          "prediction_horizon": 0,
+          "val_nrmse_range": 0.14441756998941446,
+          "train_time": 0.14239080599872977,
+          "inference_latency": 0.03212666299987177,
+          "peak_memory": 9039326
+        },
+        {
+          "rmse": 0.05945778721257562,
+          "nrmse_range": 0.10209475398587851,
+          "nrmse_std": 0.5175165201322951,
+          "nrmse_var": 0.26782334860984014,
+          "mae": 0.04617249134111221,
+          "mse": 0.003535228460215921,
+          "prediction_horizon": 0,
+          "val_nrmse_range": 0.13085011154482115,
+          "train_time": 0.14799721599956683,
+          "inference_latency": 0.03187468600117427,
+          "peak_memory": 9039326
+        }
+      ],
+      "mean": {
+        "rmse": 0.06199309335533586,
+        "nrmse_range": 0.10644811910521226,
+        "nrmse_std": 0.5395836516886777,
+        "nrmse_var": 0.2915762738868393,
+        "mae": 0.0481349770907059,
+        "mse": 0.00384876354925313,
+        "prediction_horizon": 0.8,
+        "val_nrmse_range": 0.13462529950510504,
+        "train_time": 0.17263683459932508,
+        "inference_latency": 0.03665617700025905,
+        "peak_memory": 9039416.8
+      },
+      "std": {
+        "rmse": 0.0026504540860345666,
+        "nrmse_range": 0.004551085241317776,
+        "nrmse_std": 0.023069371392363536,
+        "nrmse_var": 0.024809232849334825,
+        "mae": 0.0020405700449671995,
+        "mse": 0.00032747819225000094,
+        "prediction_horizon": 1.0954451150103324,
+        "val_nrmse_range": 0.006841122355010752,
+        "train_time": 0.06206551776462407,
+        "inference_latency": 0.010056568441103194,
+        "peak_memory": 178.43542249228432
+      }
+    },
+    "hpo_best_params": {
+      "reservoir_params": {
+        "sr": 1.0459886433949173,
+        "coupling": 1.2892951903723893,
+        "depth": 5
+      },
+      "readout_alpha": 1.0195287672729373e-6
+    },
+    "hpo_convergence": [
+      0.17591758485249853,
+      0.17591758485249853,
+      0.17591758485249853,
+      0.1333278451399619,
+      0.1333278451399619,
+      0.1333278451399619,
+      0.1333278451399619,
+      0.1333278451399619,
+      0.1333278451399619,
+      0.1333278451399619,
+      0.1333278451399619,
+      0.1333278451399619,
+      0.1333278451399619,
+      0.13280614700673332,
+      0.13280614700673332,
+      0.1287725046404737,
+      0.1287725046404737,
+      0.12792768745554853,
+      0.12792768745554853,
+      0.12792768745554853,
+      0.12792768745554853,
+      0.12792768745554853,
+      0.12792768745554853,
+      0.1278774091124088,
+      0.1278774091124088,
+      0.1278774091124088,
+      0.1278774091124088,
+      0.1278774091124088,
+      0.1278774091124088,
+      0.12657922052700726,
+      0.12657922052700726
+    ],
+    "hpo_diagnostics": {
+      "n_trials": 50,
+      "n_completed": 31,
+      "n_pruned": 19,
+      "n_failed": 0,
+      "best_trial_number": 45
+    },
+    "artifact_paths": {},
+    "error": null
+  },
+  "timestamp": "2026-05-13T07:06:32.186339+00:00",
+  "git_hash": "793b2b4",
+  "hostname": "dingus",
+  "python_version": "3.12.13",
+  "rc_bench_version": "0.1.0",
+  "lib_versions": {
+    "numpy": "2.3.5",
+    "scipy": "1.16.3",
+    "scikit-learn": "1.7.2",
+    "optuna": "4.8.0",
+    "reservoirpy": "0.4.1",
+    "pydantic": "2.12.5",
+    "matplotlib": "3.10.7"
+  },
+  "hardware_profile": {
+    "cpu_model": "AMD Ryzen 7 5700U with Radeon Graphics",
+    "cpu_count": 16,
+    "platform": "Linux-6.19.13-200.fc43.x86_64-x86_64-with-glibc2.42",
+    "machine": "x86_64",
+    "ram_total_gb": 14.96
+  }
+}

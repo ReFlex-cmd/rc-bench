@@ -153,6 +153,16 @@ def _objective(
         logger.debug("Trial %d failed: %s", trial.number, exc)
         raise optuna.TrialPruned() from exc
 
+    # Feasibility gate: skip degenerate reservoirs (e.g. LSM that never spikes,
+    # FHN locked in a fixed point). Without this, HPO can converge to a
+    # "constant predictor" basin that gives an attractive but useless val_nrmse.
+    # See audit/_diag_seed.py.
+    states_std = result.get("reservoir_states_std", 1.0)
+    if states_std < 1e-6:
+        logger.debug("Trial %d pruned: degenerate reservoir (states_std=%.2e)",
+                     trial.number, states_std)
+        raise optuna.TrialPruned()
+
     val_score = float(result["metrics"].val_nrmse_range)
 
     # Report intermediate value so MedianPruner can act on subsequent trials

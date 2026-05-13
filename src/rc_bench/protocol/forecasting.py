@@ -88,17 +88,19 @@ def closed_loop_predict(
     if n_steps <= 0:
         raise ValueError(f"n_steps must be >= 1, got {n_steps}")
 
-    # Warm up: drives reservoir through the seed window; after this call
-    # the reservoir's step-state is at the end of X_seed.
-    reservoir.warmup(X_seed)
+    # Warm up: drives reservoir through the seed window. After this call
+    # H_warmup[-1] is the reservoir state immediately after seeing X_seed[-1].
+    H_warmup = reservoir.warmup(X_seed)
 
     y_pred = np.empty(n_steps)
-    x_in = X_seed[-1:].reshape(1, -1)  # shape [1, input_dim]
+    # First prediction comes directly from the last warmup state — no extra
+    # step would only re-process X_seed[-1] (off-by-one bug fixed 2026-05-13).
+    y_t = float(readout.predict(H_warmup[-1].reshape(1, -1))[0])
+    y_pred[0] = y_t
 
-    for t in range(n_steps):
-        h_t = reservoir.step(x_in)              # shape (units,)
+    for t in range(1, n_steps):
+        h_t = reservoir.step(np.array([[y_t]]))       # autonomous: feed prediction
         y_t = float(readout.predict(h_t.reshape(1, -1))[0])
         y_pred[t] = y_t
-        x_in = np.array([[y_t]])               # closed loop: feed back prediction
 
     return y_pred

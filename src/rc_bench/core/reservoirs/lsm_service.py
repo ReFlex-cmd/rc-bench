@@ -63,8 +63,10 @@ class LSMReservoir(BaseReservoir):
         seed = config.get("seed", 42)
         units = int(config.get("units", 400))
         density = float(config.get("density", 0.05))
-        w_rec_scale = float(config.get("w_rec_scale", 1.0))
-        input_scale = float(config.get("input_scale", 0.5))
+        # Defaults sized so membrane reaches v_th=1.0 with typical z-scored inputs;
+        # see audit/_diag_seed.py — older defaults (0.5, 1.0) gave near-zero spiking.
+        w_rec_scale = float(config.get("w_rec_scale", 5.0))
+        input_scale = float(config.get("input_scale", 3.0))
 
         rng = np.random.default_rng(seed)
         W_rec = rng.normal(0.0, 1.0, (units, units))
@@ -74,7 +76,7 @@ class LSMReservoir(BaseReservoir):
 
         self._W_rec = W_rec
         self._W_in = W_in
-        self._v_th = float(config.get("v_th", 1.0))
+        self._v_th = float(config.get("v_th", 0.5))
         self._v_reset = float(config.get("v_reset", 0.0))
         tau_mem = float(config.get("tau_mem", 20.0))
         tau_syn = float(config.get("tau_syn", 10.0))

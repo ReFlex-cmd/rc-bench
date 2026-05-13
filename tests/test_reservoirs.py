@@ -17,7 +17,7 @@ from rc_bench.core.reservoirs.registry import get_reservoir, REGISTRY
 from rc_bench.runners.experiment_runner import run_experiment
 
 _DATA = get_data_for_experiment("narma10", length=600, seed=42)
-_EXPECTED_KEYS = {"metrics", "best_alpha", "preds", "y_test"}
+_EXPECTED_KEYS = {"metrics", "best_alpha", "preds", "y_test", "reservoir_states_std"}
 
 _SPECS = {
     "esn": ExperimentSpec(

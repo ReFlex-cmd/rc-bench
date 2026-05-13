@@ -44,13 +44,18 @@ SEARCH_SPACES: Dict[str, Dict[str, _SpaceEntry]] = {
         "density":           ("float_log", 0.01, 0.20),
         "readout_alpha":     ("float_log", 1e-6, 1e+2),
     },
+    # LSM ranges sized so that membrane potential reaches v_th in typical inputs:
+    # for α_mem≈exp(-1/τ_mem), incremental Δv = (1-α_mem)·I per step. With
+    # τ_mem ∈ [10,50] ms and z-scored input |u| ~ 1, lower bound of
+    # input_scale must satisfy input_scale·|u| > v_th·(1-α_mem)⁻¹·0.1, i.e.
+    # input_scale ≥ 1 to guarantee occasional spiking.
     "lsm": {
         "tau_mem":           ("float_log", 10.0, 50.0),
         "tau_syn":           ("float_log", 2.0,  10.0),
-        "v_th":              ("float",     0.5,  1.5),
+        "v_th":              ("float",     0.3,  1.0),
         "t_refractory":      ("float",     2.0,  5.0),
-        "w_rec_scale":       ("float_log", 0.1,  10.0),
-        "input_scale":       ("float_log", 0.1,  10.0),
+        "w_rec_scale":       ("float_log", 1.0,  20.0),
+        "input_scale":       ("float_log", 1.0,  10.0),
         "density":           ("float_log", 0.05, 0.20),
         "readout_alpha":     ("float_log", 1e-6, 1e+2),
     },
