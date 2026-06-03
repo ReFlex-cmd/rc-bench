@@ -1,0 +1,11 @@
+# GitHub Linguist overrides
+# Exclude generated/vendored output — keeps repo language stats as Python
+
+graphify-out/**     linguist-vendored
+outputs/**          linguist-generated
+reports/**          linguist-generated
+data/prepared/**    linguist-generated
+
+# Binary data files — not text, not counted as code
+*.npy               binary
+*.npz               binary
