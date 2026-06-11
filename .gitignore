@@ -10,3 +10,5 @@ venv/
 
 data/prepared/
 outputs/
+ansible/inventory.ini
+.claude/
