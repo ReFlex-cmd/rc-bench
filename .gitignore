@@ -6,4 +6,7 @@ venv/
 .DS_Store
 .codex
 .pytest_cache/
-.claude/
+.claude/outputs/
+
+data/prepared/
+outputs/
