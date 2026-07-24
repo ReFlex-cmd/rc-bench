@@ -6,6 +6,7 @@ Uses Typer's CliRunner — no DB, no Celery, pure in-process.
 import json
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
@@ -238,3 +239,104 @@ class TestAggregate:
     def test_nonexistent_dir_exits_nonzero(self):
         result = runner.invoke(app, ["aggregate", "/nonexistent_dir"])
         assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# eda
+# ---------------------------------------------------------------------------
+
+
+class TestEDA:
+    def test_missing_raw_file_exits_nonzero(self, tmp_path):
+        result = runner.invoke(
+            app,
+            ["eda", str(tmp_path / "missing.txt")],
+        )
+        assert result.exit_code != 0
+        assert "Raw data file not found" in result.output
+
+    def test_manifest_filename_must_match_raw_file(self, tmp_path, monkeypatch):
+        raw_path = tmp_path / "wrong.txt"
+        raw_path.write_text("fixture")
+        manifest_path = tmp_path / "manifest.json"
+        manifest_path.write_text("{}")
+        monkeypatch.setattr(
+            "rc_bench.data.download.DatasetManifest.load",
+            lambda _path: SimpleNamespace(
+                raw_filename="household_power_consumption.txt",
+                raw_sha256="a" * 64,
+            ),
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "eda",
+                str(raw_path),
+                "--manifest",
+                str(manifest_path),
+                "--output-dir",
+                str(tmp_path / "report"),
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "does not match manifest filename" in result.output
+
+    def test_verified_raw_is_loaded_and_reported(self, tmp_path, monkeypatch):
+        raw_path = tmp_path / "household_power_consumption.txt"
+        raw_path.write_text("fixture")
+        manifest_path = tmp_path / "manifest.json"
+        manifest_path.write_text("{}")
+        output_dir = tmp_path / "report"
+        series = object()
+        captured = {}
+
+        monkeypatch.setattr(
+            "rc_bench.data.download.DatasetManifest.load",
+            lambda _path: SimpleNamespace(
+                raw_filename=raw_path.name,
+                raw_sha256="b" * 64,
+            ),
+        )
+        monkeypatch.setattr(
+            "rc_bench.data.download.download_dataset",
+            lambda _manifest, _directory: raw_path,
+        )
+        monkeypatch.setattr(
+            "rc_bench.data.jmlc.load_uci_household_power_series",
+            lambda _path: series,
+        )
+
+        def fake_generate(actual_series, actual_output, *, raw_sha256):
+            captured.update(
+                series=actual_series,
+                output=actual_output,
+                raw_sha256=raw_sha256,
+            )
+            return [actual_output / "eda_report.md"]
+
+        monkeypatch.setattr(
+            "rc_bench.reporting.eda.generate_eda_report",
+            fake_generate,
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "eda",
+                str(raw_path),
+                "--manifest",
+                str(manifest_path),
+                "--output-dir",
+                str(output_dir),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert captured == {
+            "series": series,
+            "output": output_dir,
+            "raw_sha256": "b" * 64,
+        }
+        assert "eda_report.md" in result.output

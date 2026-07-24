@@ -386,6 +386,81 @@ def report_cmd(
 
 
 # ---------------------------------------------------------------------------
+# eda
+# ---------------------------------------------------------------------------
+
+@app.command("eda")
+def eda_cmd(
+    raw_path: Path = typer.Argument(
+        ...,
+        help="Verified UCI household_power_consumption.txt path.",
+    ),
+    manifest: Path = typer.Option(
+        Path("configs/jmlc/dataset_manifest.json"),
+        "--manifest",
+        help="Pinned dataset manifest used for local size/SHA-256 verification.",
+    ),
+    output_dir: Path = typer.Option(
+        Path("reports/jmlc_2026"),
+        "--output-dir",
+        help="Evidence root for the fixed EDA Markdown, JSON and plot files.",
+    ),
+) -> None:
+    """Generate deterministic observed-only EDA for the pinned 12k window."""
+    from rc_bench.data.download import (
+        DatasetDownloadError,
+        DatasetManifest,
+        download_dataset,
+    )
+    from rc_bench.data.jmlc import (
+        JMLCDataError,
+        load_uci_household_power_series,
+    )
+    from rc_bench.reporting.eda import (
+        EDAInvariantError,
+        generate_eda_report,
+    )
+
+    if not raw_path.is_file():
+        console.print(f"[red]Raw data file not found:[/red] {raw_path}")
+        raise typer.Exit(1)
+
+    try:
+        pinned = DatasetManifest.load(manifest)
+        if raw_path.name != pinned.raw_filename:
+            raise ValueError(
+                f"raw filename {raw_path.name!r} does not match manifest "
+                f"filename {pinned.raw_filename!r}"
+            )
+
+        verified_path = download_dataset(manifest, raw_path.parent)
+        if verified_path.resolve() != raw_path.resolve():
+            raise ValueError(
+                "verified manifest path does not match the requested raw path"
+            )
+
+        series = load_uci_household_power_series(verified_path)
+        paths = generate_eda_report(
+            series,
+            output_dir,
+            raw_sha256=pinned.raw_sha256,
+        )
+    except (
+        DatasetDownloadError,
+        EDAInvariantError,
+        JMLCDataError,
+        OSError,
+        ValueError,
+    ) as exc:
+        console.print(f"[red]EDA failed:[/red] {exc}")
+        raise typer.Exit(1)
+
+    console.print("[green]EDA complete[/green]")
+    for path in paths:
+        console.print(f"  {path.relative_to(output_dir).as_posix()}")
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
