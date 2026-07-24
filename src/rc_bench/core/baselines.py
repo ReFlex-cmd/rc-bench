@@ -90,13 +90,19 @@ def ar_lag_features(
 
 @dataclass(frozen=True)
 class RidgeARFit:
-    """Result of a fixed-grid Ridge AR fit (DEC-013/DEC-015)."""
+    """Result of a fixed-grid Ridge AR fit (DEC-013/DEC-015).
+
+    ``scaler`` and ``final_model`` expose the fitted train-only scaler and the
+    train+val model so callers can re-run a timed test prediction in isolation.
+    """
 
     alpha: float
     val_nrmse_std: float
     candidates: tuple[tuple[float, float], ...]
     val_predictions: np.ndarray
     test_predictions: np.ndarray
+    scaler: StandardScaler
+    final_model: Ridge
 
 
 def select_and_fit_ridge_ar(
@@ -160,4 +166,6 @@ def select_and_fit_ridge_ar(
         candidates=tuple(candidates),
         val_predictions=best_val_pred,
         test_predictions=test_pred,
+        scaler=scaler,
+        final_model=final_model,
     )

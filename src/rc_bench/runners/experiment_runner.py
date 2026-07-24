@@ -22,6 +22,7 @@ from rc_bench.protocol.forecasting import (
     build_one_step_targets,
     build_fixed_horizon_targets,
     closed_loop_predict,
+    target_offset,
 )
 from rc_bench.readout.ridge import select_alpha, RidgeReadout
 
@@ -119,10 +120,12 @@ def _aligned_target_mask(
     mask: np.ndarray,
     spec: ExperimentSpec,
 ) -> np.ndarray:
-    target_offset = spec.protocol.washout
-    if spec.protocol.forecasting_mode == "fixed_horizon":
-        target_offset += spec.protocol.horizon
-    return mask[target_offset:]
+    offset = target_offset(
+        spec.protocol.washout,
+        spec.protocol.horizon,
+        spec.protocol.forecasting_mode,
+    )
+    return mask[offset:]
 
 
 def _build_observed_training_pairs(

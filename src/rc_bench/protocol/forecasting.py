@@ -58,6 +58,37 @@ def build_fixed_horizon_targets(
 
 
 # ---------------------------------------------------------------------------
+# Shared per-split target alignment (DEC-012/DEC-013)
+# ---------------------------------------------------------------------------
+
+def target_offset(washout: int, horizon: int, mode: str) -> int:
+    """Split-local index of the first evaluated target after alignment.
+
+    ``fixed_horizon`` skips ``washout + horizon`` leading positions; ``one_step``
+    and ``closed_loop`` skip ``washout``. Reservoir and baseline runners share
+    this so every model is evaluated on the same target timestamps.
+    """
+    if mode == "fixed_horizon":
+        return washout + horizon
+    if mode in ("one_step", "closed_loop"):
+        return washout
+    raise ValueError(f"Unknown forecasting_mode: {mode!r}")
+
+
+def aligned_target_positions(
+    observed_mask: np.ndarray,
+    washout: int,
+    horizon: int,
+    mode: str = "fixed_horizon",
+) -> np.ndarray:
+    """Split-local indices of observed targets after washout/horizon alignment."""
+    offset = target_offset(washout, horizon, mode)
+    mask = np.asarray(observed_mask, dtype=bool)
+    positions = np.arange(offset, mask.size)
+    return positions[mask[offset:]]
+
+
+# ---------------------------------------------------------------------------
 # Closed-loop rollout
 # ---------------------------------------------------------------------------
 
