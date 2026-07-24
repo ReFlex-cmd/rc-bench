@@ -1,0 +1,27 @@
+# JMLC smoke-matrix template (DEC-002 / DEC-013 / DEC-014).
+#
+# This is a single VALID ExperimentSpec so `rcbench validate-spec` stays
+# meaningful. scripts/run_jmlc_matrix.py uses it as the shared template and
+# expands the canonical 14-cell matrix (7 models x horizons 1 and 24):
+#   baselines : persistence, seasonal_persistence, ridge_ar (deterministic)
+#   reservoirs: esn, leaky_esn, lsm, logistic (1 seed, 2 HPO trials for smoke)
+dataset:
+  name: uci_household_power
+  length: 12000
+reservoir:
+  type: esn
+  params: {}
+protocol:
+  washout: 200
+  train_frac: 0.6
+  val_frac: 0.2
+  forecasting_mode: fixed_horizon
+  horizon: 1
+  use_hpo: true
+  hpo_budget: 2
+  n_seeds: 1
+  selection_metric: nrmse_std
+  seasonal_period: 24
+readout:
+  alpha_grid: [0.001, 0.01, 0.1, 1.0, 10.0]
+seed: 42
