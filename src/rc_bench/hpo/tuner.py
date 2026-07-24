@@ -169,7 +169,9 @@ def _objective(
                      trial.number, states_std)
         raise optuna.TrialPruned()
 
-    val_score = float(result["val_nrmse_range"])
+    # Minimise the configured selection metric (NRMSE_range legacy default,
+    # NRMSE_std for JMLC per DEC-013); falls back to range for older results.
+    val_score = float(result.get("val_score", result["val_nrmse_range"]))
 
     # Report intermediate value so MedianPruner can act on subsequent trials
     trial.report(val_score, step=0)

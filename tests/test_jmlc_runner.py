@@ -73,7 +73,7 @@ def _masked_data() -> dict[str, np.ndarray]:
 def _install_readout_spies(monkeypatch) -> dict[str, Any]:
     calls: dict[str, Any] = {"predict_lengths": []}
 
-    def fake_select_alpha(H_train, y_train, H_val, y_val, alphas):
+    def fake_select_alpha(H_train, y_train, H_val, y_val, alphas, metric="nrmse_range"):
         calls["select"] = (
             np.asarray(H_train).copy(),
             np.asarray(y_train).copy(),
@@ -81,6 +81,7 @@ def _install_readout_spies(monkeypatch) -> dict[str, Any]:
             np.asarray(y_val).copy(),
         )
         calls["alphas"] = list(alphas)
+        calls["selection_metric"] = metric
         return {"alpha": 0.1, "val_nrmse": 0.25}
 
     class SpyReadout:

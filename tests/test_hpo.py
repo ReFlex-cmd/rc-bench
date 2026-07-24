@@ -15,6 +15,7 @@ from rc_bench.hpo.search_spaces import (
     SEARCH_SPACES, params_from_trial, suggest_params,
 )
 from rc_bench.hpo.tuner import apply_hpo_params, run_hpo
+from rc_bench.readout.ridge import select_alpha
 from rc_bench.runners.multi_seed import run_multi_seed
 from rc_bench.runners.pipeline import run_pipeline
 
@@ -206,6 +207,37 @@ class TestRunHPO:
 # ---------------------------------------------------------------------------
 # TestMetricsSummary
 # ---------------------------------------------------------------------------
+
+class TestSelectAlphaMetric:
+    @staticmethod
+    def _data():
+        rng = np.random.default_rng(3)
+        w = np.array([1.5, -2.0, 0.5])
+        H_train = rng.standard_normal((100, 3))
+        y_train = H_train @ w + 0.1 * rng.standard_normal(100)
+        H_val = rng.standard_normal((40, 3))
+        y_val = H_val @ w + 0.1 * rng.standard_normal(40)
+        return H_train, y_train, H_val, y_val
+
+    _ALPHAS = [0.001, 1.0, 1000.0]
+
+    def test_default_metric_is_nrmse_range(self):
+        info = select_alpha(*self._data(), self._ALPHAS)
+        assert info["selection_metric"] == "nrmse_range"
+        assert info["val_score"] == pytest.approx(info["val_nrmse"])
+        assert "val_nrmse_std" in info
+
+    def test_std_metric_reports_std_score_and_keeps_same_alpha(self):
+        data = self._data()
+        by_range = select_alpha(*data, self._ALPHAS, metric="nrmse_range")
+        by_std = select_alpha(*data, self._ALPHAS, metric="nrmse_std")
+        # For a fixed validation target set both NRMSEs equal RMSE / const, so
+        # the argmin (selected alpha) is identical; only the score units differ.
+        assert by_std["alpha"] == by_range["alpha"]
+        assert by_std["selection_metric"] == "nrmse_std"
+        assert by_std["val_score"] == pytest.approx(by_std["val_nrmse_std"])
+        assert by_std["val_nrmse"] == pytest.approx(by_range["val_nrmse"])
+
 
 def _make_metrics(nrmse_range: float, seed: int = 0) -> MetricsResult:
     return MetricsResult(

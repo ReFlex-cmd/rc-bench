@@ -214,6 +214,7 @@ def _prepare_train_validation(
         H_val,
         y_val_observed,
         spec.readout.alpha_grid,
+        metric=spec.protocol.selection_metric,
     )
 
     return _TrainValidationEvaluation(
@@ -235,9 +236,13 @@ def evaluate_train_validation(
     """Evaluate one HPO candidate using train and validation data only."""
 
     prepared = _prepare_train_validation(data, spec, reservoir)
+    alpha_info = prepared.alpha_info
     return {
-        "best_alpha": float(prepared.alpha_info["alpha"]),
-        "val_nrmse_range": float(prepared.alpha_info["val_nrmse"]),
+        "best_alpha": float(alpha_info["alpha"]),
+        "val_nrmse_range": float(alpha_info["val_nrmse"]),
+        "val_nrmse_std": alpha_info.get("val_nrmse_std"),
+        # Selection metric value the HPO objective minimises (DEC-013).
+        "val_score": float(alpha_info.get("val_score", alpha_info["val_nrmse"])),
         "reservoir_states_std": prepared.reservoir_states_std,
     }
 
@@ -336,6 +341,7 @@ def run_experiment(
         mse=mse(y_te, y_test_pred),
         prediction_horizon=prediction_horizon(y_te, y_test_pred),
         val_nrmse_range=prepared.alpha_info["val_nrmse"],
+        val_nrmse_std=prepared.alpha_info.get("val_nrmse_std"),
         train_time=t_train_end - t_train_start,
         inference_latency=t_infer_end - t_infer_start,
         peak_memory=peak_bytes,
