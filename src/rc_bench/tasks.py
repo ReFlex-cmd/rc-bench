@@ -31,6 +31,8 @@ def run_experiment_task(experiment_id: int) -> None:
             data = get_data_for_experiment(
                 dataset_name=spec.dataset.name,
                 length=spec.dataset.length,
+                train_frac=spec.protocol.train_frac,
+                val_frac=spec.protocol.val_frac,
                 seed=spec.dataset.seed,
             )
 

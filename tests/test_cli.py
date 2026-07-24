@@ -144,6 +144,47 @@ class TestRun:
         m2 = json.loads(out2.read_text())["result"]["metrics"]["nrmse_range"]
         assert m1 == m2
 
+    def test_forwards_protocol_split_fractions_to_data_provider(
+        self, tmp_path, monkeypatch
+    ):
+        spec = {
+            **_ESN_SPEC,
+            "protocol": {
+                "washout": 20,
+                "n_seeds": 1,
+                "train_frac": 0.5,
+                "val_frac": 0.3,
+            },
+        }
+        p = tmp_path / "spec.json"
+        p.write_text(json.dumps(spec))
+        captured = {}
+        data = object()
+
+        def fake_get_data_for_experiment(**kwargs):
+            captured.update(kwargs)
+            return data
+
+        def fake_run_pipeline(actual_data, *_args, **_kwargs):
+            assert actual_data is data
+            return object()
+
+        monkeypatch.setattr(
+            "rc_bench.core.data_provider.get_data_for_experiment",
+            fake_get_data_for_experiment,
+        )
+        monkeypatch.setattr(
+            "rc_bench.runners.pipeline.run_pipeline",
+            fake_run_pipeline,
+        )
+        monkeypatch.setattr("rc_bench.cli.app._print_result", lambda _result: None)
+
+        result = runner.invoke(app, ["run", str(p)])
+
+        assert result.exit_code == 0, result.output
+        assert captured["train_frac"] == 0.5
+        assert captured["val_frac"] == 0.3
+
     def test_missing_spec_file_exits_nonzero(self):
         result = runner.invoke(app, ["run", "/nonexistent.json"])
         assert result.exit_code != 0

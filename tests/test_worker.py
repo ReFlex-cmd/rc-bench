@@ -11,6 +11,7 @@ Covers:
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -204,6 +205,82 @@ class TestWorkerArtifactDirectoryStructure:
         assert not deep.exists()
         run_pipeline(_DATA, _SPEC, artifact_dir=deep)
         assert deep.exists()
+
+
+# ---------------------------------------------------------------------------
+# TestWorkerSplitFractions
+# ---------------------------------------------------------------------------
+
+
+class TestWorkerSplitFractions:
+    """Regression coverage for protocol split fractions in the Celery entry point."""
+
+    def test_forwards_protocol_split_fractions_to_data_provider(
+        self, tmp_path, monkeypatch
+    ):
+        from rc_bench import tasks
+
+        experiment_id = 17
+        experiment = SimpleNamespace(
+            config={
+                "dataset": {"name": "narma10", "length": 300, "seed": 42},
+                "reservoir": {"type": "esn", "params": {"n_units": 20}},
+                "protocol": {
+                    "washout": 20,
+                    "n_seeds": 1,
+                    "train_frac": 0.5,
+                    "val_frac": 0.3,
+                },
+                "seed": 42,
+            },
+            status=tasks.ExperimentStatus.QUEUED,
+        )
+        captured = {}
+        data = object()
+
+        class FakeSession:
+            def __init__(self):
+                self.added = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def get(self, model, actual_id):
+                assert model is tasks.Experiment
+                assert actual_id == experiment_id
+                return experiment
+
+            def add(self, value):
+                self.added.append(value)
+
+            def commit(self):
+                pass
+
+        session = FakeSession()
+
+        def fake_get_data_for_experiment(**kwargs):
+            captured.update(kwargs)
+            return data
+
+        def fake_run_pipeline(actual_data, *_args, **_kwargs):
+            assert actual_data is data
+            return ResultSpec(status="completed", config_hash="test-config")
+
+        monkeypatch.setattr(tasks, "get_sync_db_session", lambda: session)
+        monkeypatch.setattr(
+            tasks, "get_data_for_experiment", fake_get_data_for_experiment
+        )
+        monkeypatch.setattr(tasks, "run_pipeline", fake_run_pipeline)
+        monkeypatch.setattr(tasks.settings, "ARTIFACT_DIR", tmp_path)
+
+        tasks.run_experiment_task.run(experiment_id)
+
+        assert captured["train_frac"] == 0.5
+        assert captured["val_frac"] == 0.3
+        assert experiment.status == tasks.ExperimentStatus.COMPLETED
 
 
 # ---------------------------------------------------------------------------
