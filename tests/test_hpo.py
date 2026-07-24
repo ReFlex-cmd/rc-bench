@@ -240,11 +240,19 @@ class TestMetricsSummary:
         summary = MetricsSummary.from_metrics_list([m1, m2], lambda xs: float(np.mean(xs)))
         assert summary.nrmse_range == pytest.approx(0.3)
 
-    def test_all_fields_float(self):
+    def test_required_fields_float_optional_jmlc_fields_none_when_absent(self):
+        # Per DEC-013/DEC-014 the JMLC metrics (val_nrmse_std/mase/mae_skill)
+        # are additive Optional fields: they aggregate to None when the source
+        # metrics omit them (legacy/synthetic records) and to a float otherwise.
         m = _make_metrics(0.3)
         summary = MetricsSummary.from_metrics_list([m], lambda xs: float(np.mean(xs)))
+        optional_jmlc_fields = {"val_nrmse_std", "mase", "mae_skill"}
         for field in MetricsSummary.model_fields:
-            assert isinstance(getattr(summary, field), float)
+            value = getattr(summary, field)
+            if field in optional_jmlc_fields:
+                assert value is None
+            else:
+                assert isinstance(value, float)
 
 
 # ---------------------------------------------------------------------------
