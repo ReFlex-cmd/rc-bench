@@ -2,7 +2,7 @@
 
 ## Точка продолжения
 
-- Ветка: `dev`, HEAD `0866fe8`; `origin/dev` отстаёт (не запушено).
+- Ветка: `dev`, HEAD `d6f5bfc`; `origin/dev` отстаёт (не запушено).
 - Рабочее дерево чистое, кроме незакоммиченного этого файла и (возможно) memory.
 - Активных сабагентов и фоновых pytest нет.
 - Последний полный quick gate: **402 passed, 1 deselected**.
@@ -15,16 +15,21 @@
 - `7f33fae` BASE-001 предикторы: `persistence_forecast`, `seasonal_persistence_forecast`, `ar_lag_features`.
 - `bcf8865` BASE-002: `select_and_fit_ridge_ar` (train-only scaler, alpha по val NRMSE_std, рефит train+val). Записан **DEC-015**.
 - `0866fe8` baseline runner: `run_baseline(data, spec)` — общий с reservoir target-alignment (`aligned_target_positions`/`target_offset`), MASE/MAE-skill, selection/evaluation metadata. Тест-замок DEC-013: baseline и reservoir дают идентичный наблюдаемый test-target set.
+- `d6f5bfc` **baseline dispatch + VSLICE-001**: `run_pipeline` короткозамыкает `BaselineSpec` в `_run_baseline_pipeline` → `ResultSpec(model_family=baseline, deterministic, evaluated_seeds=[], selection, evaluation)`. Reservoir `ResultSpec` тоже получил model_family/deterministic/evaluated_seeds/selection (аддитивно). `tests/test_vslice.py`: horizon-1 persistence + маленький ESN через pipeline, идентичный test-target set по сохранённым артефактам.
 
-BOOT-001/002, COR-001/002/003, TEST-001, CI-001, DATA-001/002/003, ENERGY-001, EDA-001, DOC-002, **BASE-001, BASE-002, MET-001** — DONE.
+BOOT-001/002, COR-001/002/003, TEST-001, CI-001, DATA-001/002/003, ENERGY-001, EDA-001, DOC-002, **BASE-001, BASE-002, MET-001, VSLICE-001** — DONE.
+
+## Cross-cutting пред-условия перед матрицей (обнаружено, ещё НЕ сделано)
+
+1. **Reservoir HPO/selection по `NRMSE_std`** (DEC-013): сейчас reservoir alpha-selection (`readout.select_alpha`) и Optuna идут по `NRMSE_std`? Нет — по `nrmse_range`. `protocol.selection_metric` не проброшен в reservoir-путь. Нужно перед EXP-003 (fair matrix), НЕ нужно для smoke-плана. Метаданные `SelectionResult.metric` уже пишутся, но фактическая селекция ещё по range.
+2. **CLI/reporting baseline-awareness**: `main.py:139`, `reporting/report.py:55`, `reporting/plots.py:31`, `scripts/make_plots.py:43` обращаются к `spec.reservoir.type` безусловно → упадут на baseline. Нужно перед прогоном матрицы через CLI и перед EVID/PLOT. Использовать `spec.model_type`/`spec.model_family`.
+3. `configs/jmlc/smoke.yaml` отсутствует (нужен для `verify.sh smoke` и EXP-001).
 
 ## Следующие шаги
 
-1. **Baseline dispatch + VSLICE-001**: подключить `run_baseline` в pipeline (`runners/pipeline.py`), собрать `ResultSpec`/`RunRecord` для `BaselineSpec` (model_family/deterministic/evaluated_seeds/selection/evaluation), диспетчеризация reservoir vs baseline. Затем end-to-end horizon-1 persistence + ESN smoke на реальных данных.
-   - Прежде чем менять pipeline, изучить, как reservoir-путь строит `ResultSpec`/`RunRecord` (`runners/pipeline.py`, `reporting/run_record.py`), и где HPO/multi-seed развилка.
-   - `run_baseline` уже возвращает готовые `metrics`/`selection`/`evaluation`/`preds`/`y_test` + `model_family="baseline"`, `deterministic=True`, `evaluated_seeds=[]`.
-2. PROF-001/PROF-002 (latency p50/p95, isolated RSS/model bytes/state bytes) — хорошие кандидаты в сабагенты (heavy independent).
-3. EXP-001/002 smoke matrix 14 cells → EXP-003 fair matrix (5 seeds, 20 trials) — требует compute.
+1. PROF-001/PROF-002 (latency p50/p95, isolated RSS/model bytes/state bytes) — кандидаты в сабагенты (heavy independent).
+2. Cross-cutting пред-условия выше (reservoir selection_metric, CLI/reporting baseline-awareness, smoke.yaml) — основной агент.
+3. EXP-001/002 smoke matrix 14 cells → EXP-003 fair matrix (5 seeds, 20 trials) — требует compute (решить тайминг с пользователем).
 4. EVID-001 → PLOT-001 → DOC-001 → DEMO-001 → PRES-001 → REL-001.
 
 ## Данные и окружение
