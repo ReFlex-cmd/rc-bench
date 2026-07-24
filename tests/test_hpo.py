@@ -268,6 +268,21 @@ class TestPipeline:
     def test_result_config_hash_matches_spec(self):
         spec = self._spec()
         result = run_pipeline(_DATA, spec)
-        # hash is from the spec after potential HPO updates; just check it's a string
-        assert isinstance(result.config_hash, str)
-        assert len(result.config_hash) == 16
+        assert result.frozen_config_hash == spec.config_hash()
+        assert result.resolved_spec == spec
+        assert result.config_hash == result.resolved_spec.config_hash()
+
+    def test_hpo_result_keeps_frozen_and_resolved_specs_distinct(self):
+        spec = self._spec(use_hpo=True, hpo_budget=3)
+        frozen_dump = spec.model_dump()
+
+        result = run_pipeline(_DATA, spec)
+
+        assert spec.model_dump() == frozen_dump
+        assert result.frozen_config_hash == spec.config_hash()
+        assert result.resolved_spec is not None
+        assert result.resolved_spec != spec
+        assert result.config_hash == result.resolved_spec.config_hash()
+        assert result.resolved_spec.readout.alpha_grid == [
+            result.hpo_best_params["readout_alpha"]
+        ]

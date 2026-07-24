@@ -108,7 +108,12 @@ class MultiSeedResult(BaseModel):
 
 class ResultSpec(BaseModel):
     status: Literal["completed", "failed"]
+    # ``config_hash`` always identifies the actually evaluated resolved spec.
     config_hash: str
+    # Kept alongside the resolved hash so HPO runs remain traceable to the
+    # immutable user input. Optional defaults preserve legacy/failed records.
+    frozen_config_hash: Optional[str] = None
+    resolved_spec: Optional[ExperimentSpec] = None
     metrics: Optional[MetricsResult] = None
     multi_seed_result: Optional[MultiSeedResult] = None
     hpo_best_params: Optional[Dict[str, Any]] = None

@@ -57,3 +57,9 @@ Headline — `NRMSE_std`. Рядом публикуются MAE, RMSE, seasonal 
 Дата: 24.07.2026. Статус: accepted.
 
 P0: correctness, real data, EDA, baselines, fair protocol, latency/memory, evidence, CI и demo. P1: operation count, sparsity, LSM events. P2: API hardening, energy backend и расширение матрицы.
+
+## DEC-010 — Frozen и resolved спецификации
+
+Дата: 24.07.2026. Статус: accepted.
+
+`ResultSpec.config_hash` всегда относится к фактически оценённому resolved spec. `ResultSpec` дополнительно сохраняет `frozen_config_hash` и `resolved_spec`, а `RunRecord` хранит исходный `spec` как frozen и отдельный `resolved_spec`. Старые RunRecord без `resolved_spec` загружаются совместимо, используя исходный `spec` в обеих ролях.

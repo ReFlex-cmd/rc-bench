@@ -70,6 +70,7 @@ class TestRunRecord:
         result = _run()
         rec = RunRecord.make(_SPEC, result)
         assert rec.spec == _SPEC
+        assert rec.resolved_spec == result.resolved_spec
         assert rec.result.status == "completed"
         assert rec.result.config_hash == result.config_hash
 
@@ -80,6 +81,7 @@ class TestRunRecord:
         save_run_record(rec, path)
         loaded = load_run_record(path)
         assert loaded.spec == rec.spec
+        assert loaded.resolved_spec == rec.resolved_spec
         assert loaded.result.config_hash == rec.result.config_hash
         assert loaded.timestamp == rec.timestamp
         assert loaded.hostname == rec.hostname
@@ -87,11 +89,15 @@ class TestRunRecord:
     def test_load_legacy_format(self, tmp_path):
         """Files saved by the old CLI (no metadata fields) must load without error."""
         result = _run()
-        legacy = {"spec": _SPEC.model_dump(), "result": result.model_dump()}
+        legacy_result = result.model_dump()
+        legacy_result.pop("resolved_spec")
+        legacy_result.pop("frozen_config_hash")
+        legacy = {"spec": _SPEC.model_dump(), "result": legacy_result}
         path = tmp_path / "legacy.json"
         path.write_text(json.dumps(legacy, default=str))
         loaded = load_run_record(path)
         assert loaded.spec == _SPEC
+        assert loaded.resolved_spec == _SPEC
         assert loaded.timestamp == ""  # default value
 
     def test_save_creates_parent_dirs(self, tmp_path):
@@ -119,8 +125,28 @@ class TestRunRecord:
         save_run_record(rec, path)
         parsed = json.loads(path.read_text())
         assert "spec" in parsed
+        assert "resolved_spec" in parsed
         assert "result" in parsed
         assert "timestamp" in parsed
+
+    def test_hpo_record_keeps_atomic_frozen_resolved_pair(self):
+        spec = _SPEC.model_copy(
+            deep=True,
+            update={
+                "protocol": _SPEC.protocol.model_copy(
+                    update={"use_hpo": True, "hpo_budget": 3}
+                )
+            },
+        )
+        result = run_pipeline(_DATA, spec)
+
+        rec = RunRecord.make(spec, result)
+
+        assert rec.spec == spec
+        assert rec.resolved_spec == result.resolved_spec
+        assert rec.spec.config_hash() == result.frozen_config_hash
+        assert rec.resolved_spec.config_hash() == result.config_hash
+        assert rec.spec != rec.resolved_spec
 
 
 # ---------------------------------------------------------------------------

@@ -35,31 +35,37 @@ def run_pipeline(
     3. Optional artifacts: if artifact_dir is given, saves predictions.npz
        (single-seed only) and populates ResultSpec.artifact_paths.
     """
+    frozen_spec = spec.model_copy(deep=True)
+    resolved_spec = frozen_spec.model_copy(deep=True)
     hpo_best_params = None
     hpo_convergence = None
     hpo_diagnostics = None
 
-    if spec.protocol.use_hpo:
+    if frozen_spec.protocol.use_hpo:
         from rc_bench.hpo.tuner import apply_hpo_params, run_hpo
 
         hpo = run_hpo(
-            spec,
+            frozen_spec,
             data,
-            n_trials=spec.protocol.hpo_budget,
-            seed=spec.seed,
+            n_trials=frozen_spec.protocol.hpo_budget,
+            seed=frozen_spec.seed,
         )
         hpo_best_params = hpo.best_params
         hpo_convergence = hpo.convergence
         hpo_diagnostics = hpo.diagnostics
-        spec = apply_hpo_params(spec, hpo_best_params)
+        resolved_spec = apply_hpo_params(frozen_spec, hpo_best_params)
 
-    n_seeds = spec.protocol.n_seeds
+    frozen_config_hash = frozen_spec.config_hash()
+    resolved_config_hash = resolved_spec.config_hash()
+    n_seeds = resolved_spec.protocol.n_seeds
 
     if n_seeds > 1:
-        multi_seed_result = run_multi_seed(data, spec, n_seeds)
+        multi_seed_result = run_multi_seed(data, resolved_spec, n_seeds)
         return ResultSpec(
             status="completed",
-            config_hash=spec.config_hash(),
+            config_hash=resolved_config_hash,
+            frozen_config_hash=frozen_config_hash,
+            resolved_spec=resolved_spec,
             metrics=None,               # use multi_seed_result.mean for reporting
             multi_seed_result=multi_seed_result,
             hpo_best_params=hpo_best_params,
@@ -67,14 +73,20 @@ def run_pipeline(
             hpo_diagnostics=hpo_diagnostics,
         )
     else:
-        reservoir_config = {"seed": spec.seed, **spec.reservoir.params}
-        reservoir = get_reservoir(spec.reservoir.type, reservoir_config)
-        result = run_experiment(data, spec, reservoir)
+        reservoir_config = {
+            "seed": resolved_spec.seed,
+            **resolved_spec.reservoir.params,
+        }
+        reservoir = get_reservoir(
+            resolved_spec.reservoir.type,
+            reservoir_config,
+        )
+        result = run_experiment(data, resolved_spec, reservoir)
 
         artifact_paths: Dict[str, str] = {}
         if artifact_dir is not None:
             artifact_dir.mkdir(parents=True, exist_ok=True)
-            npz_path = artifact_dir / f"{spec.config_hash()}_predictions.npz"
+            npz_path = artifact_dir / f"{resolved_config_hash}_predictions.npz"
             np.savez(
                 npz_path,
                 y_test=result["y_test"],
@@ -84,7 +96,9 @@ def run_pipeline(
 
         return ResultSpec(
             status="completed",
-            config_hash=spec.config_hash(),
+            config_hash=resolved_config_hash,
+            frozen_config_hash=frozen_config_hash,
+            resolved_spec=resolved_spec,
             metrics=result["metrics"],
             hpo_best_params=hpo_best_params,
             hpo_convergence=hpo_convergence,
