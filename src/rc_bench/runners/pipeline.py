@@ -12,7 +12,8 @@ from typing import Any, Dict, Optional
 import numpy as np
 
 from rc_bench.core.reservoirs.registry import get_reservoir
-from rc_bench.core.schema import ExperimentSpec, ResultSpec
+from rc_bench.core.schema import ExperimentSpec, ResultSpec, SelectionResult
+from rc_bench.runners.baseline_runner import run_baseline
 from rc_bench.runners.experiment_runner import run_experiment
 from rc_bench.runners.multi_seed import run_multi_seed
 
@@ -32,6 +33,61 @@ def _save_predictions_artifact(
         seed=np.asarray(seed, dtype=np.int64),
     )
     return str(npz_path)
+
+
+def _reservoir_selection(
+    resolved_spec: ExperimentSpec,
+    hpo_best_params: Optional[Dict[str, Any]],
+) -> SelectionResult:
+    if resolved_spec.protocol.use_hpo:
+        return SelectionResult(
+            method="optuna",
+            metric=resolved_spec.protocol.selection_metric,
+            selected_params=hpo_best_params or {},
+        )
+    return SelectionResult(method="none")
+
+
+def _run_baseline_pipeline(
+    data: Dict[str, Any],
+    spec: ExperimentSpec,
+    artifact_dir: Optional[Path],
+    save_predictions: bool,
+) -> ResultSpec:
+    """Deterministic single-result path for BaselineSpec experiments (DEC-014).
+
+    Baselines never run Optuna HPO or multi-seed (enforced by ExperimentSpec),
+    so the frozen and resolved specs are identical.
+    """
+    resolved_spec = spec.model_copy(deep=True)
+    config_hash = resolved_spec.config_hash()
+    result = run_baseline(data, resolved_spec)
+
+    artifact_paths: Dict[str, str] = {}
+    if save_predictions:
+        assert artifact_dir is not None
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        npz_path = artifact_dir / f"{config_hash}_deterministic_predictions.npz"
+        np.savez(
+            npz_path,
+            y_test=result["y_test"],
+            y_pred=result["preds"],
+        )
+        artifact_paths["predictions"] = str(npz_path)
+
+    return ResultSpec(
+        status="completed",
+        config_hash=config_hash,
+        frozen_config_hash=config_hash,
+        resolved_spec=resolved_spec,
+        metrics=result["metrics"],
+        model_family="baseline",
+        deterministic=True,
+        evaluated_seeds=[],
+        selection=result["selection"],
+        evaluation=result["evaluation"],
+        artifact_paths=artifact_paths,
+    )
 
 
 def run_pipeline(
@@ -56,6 +112,9 @@ def run_pipeline(
     """
     if save_predictions and artifact_dir is None:
         raise ValueError("artifact_dir is required when save_predictions=True")
+
+    if spec.model_family == "baseline":
+        return _run_baseline_pipeline(data, spec, artifact_dir, save_predictions)
 
     frozen_spec = spec.model_copy(deep=True)
     resolved_spec = frozen_spec.model_copy(deep=True)
@@ -114,6 +173,10 @@ def run_pipeline(
             hpo_best_params=hpo_best_params,
             hpo_convergence=hpo_convergence,
             hpo_diagnostics=hpo_diagnostics,
+            model_family="reservoir",
+            deterministic=False,
+            evaluated_seeds=list(multi_seed_result.seeds),
+            selection=_reservoir_selection(resolved_spec, hpo_best_params),
             artifact_paths=artifact_paths,
         )
     else:
@@ -146,5 +209,9 @@ def run_pipeline(
             hpo_best_params=hpo_best_params,
             hpo_convergence=hpo_convergence,
             hpo_diagnostics=hpo_diagnostics,
+            model_family="reservoir",
+            deterministic=False,
+            evaluated_seeds=[resolved_spec.seed],
+            selection=_reservoir_selection(resolved_spec, hpo_best_params),
             artifact_paths=artifact_paths,
         )
