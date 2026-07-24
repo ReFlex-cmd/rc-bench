@@ -10,7 +10,7 @@
 | COR-002 | P0 | Разделить frozen/resolved spec и исправить RunRecord после HPO | BOOT-002 | 1.5 ч | DONE |
 | COR-003 | P0 | Сохранять predictions для demo без раздувания всех production runs | COR-002 | 0.5 ч | DONE |
 | TEST-001 | P0 | Self-contained unit mode и актуальный integration marker | BOOT-002 | 1 ч | DONE |
-| CI-001 | P0 | GitHub Actions: Python 3.12, install, unit gate, CLI smoke | TEST-001 | 1 ч | READY |
+| CI-001 | P0 | GitHub Actions: Python 3.12, install, unit gate, CLI smoke | TEST-001 | 1 ч | DONE |
 | DATA-001 | P0 | Download command и dataset manifest с SHA-256 | BOOT-002 | 1 ч | DONE |
 | DATA-002 | P0 | Hourly loader, masks, 12k window, causal preprocessing | DATA-001 | 2 ч | READY |
 | DATA-003 | P0 | Тесты временной оси, split, missing target и train-only scaler | DATA-002 | 1 ч | READY |
