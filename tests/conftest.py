@@ -1,5 +1,29 @@
-import pytest
+"""Shared pytest configuration.
+
+Application settings are deliberately strict in production. Tests receive
+non-secret local defaults so unit collection does not depend on a developer's
+shell, ``.env`` file, PostgreSQL, or Redis. Explicitly exported values still
+win, which lets the integration suite target provisioned test services.
+"""
+
+import os
 from typing import AsyncGenerator
+
+import pytest
+
+
+_TEST_ENV_DEFAULTS = {
+    "POSTGRES_USER": "rc_test",
+    "POSTGRES_PASSWORD": "rc_test",
+    "POSTGRES_DB": "rc_bench_test",
+    "DB_HOST": "localhost",
+    "DB_PORT": "5432",
+    "REDIS_URL": "redis://localhost:6379/15",
+    "SECRET_KEY": "pytest-only-secret-key",
+}
+
+for _setting_name, _default_value in _TEST_ENV_DEFAULTS.items():
+    os.environ.setdefault(_setting_name, _default_value)
 
 # БД-зависимости импортируются лениво — unit-тесты (metrics, data_provider,
 # reservoirs) не требуют PostgreSQL и не должны падать при его отсутствии.

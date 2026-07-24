@@ -1,5 +1,9 @@
+"""API integration flow requiring provisioned PostgreSQL and Redis services."""
+
 import pytest
 from httpx import AsyncClient
+
+pytestmark = pytest.mark.integration
 
 # Данные для теста
 TEST_EMAIL = "pytest_user@example.com"
@@ -7,7 +11,6 @@ TEST_PASSWORD = "strongpassword123"
 
 # Декоратор, говорящий pytest'у, что тест асинхронный
 @pytest.mark.asyncio
-@pytest.mark.integration
 async def test_full_flow(client: AsyncClient):
     # ---------------------------------------------------------
     # 1. РЕГИСТРАЦИЯ
