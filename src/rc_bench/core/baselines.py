@@ -10,10 +10,17 @@ silently wrapped negative NumPy index.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
+from sklearn.linear_model import Ridge
+from sklearn.preprocessing import StandardScaler
+
+from rc_bench.core.metrics import nrmse_std
 
 SEASONAL_PERIOD = 24
 RIDGE_AR_LAGS = 24
+RIDGE_AR_ALPHA_GRID = (0.001, 0.01, 0.1, 1.0, 10.0)
 
 
 def _causal_index(
@@ -79,3 +86,78 @@ def ar_lag_features(
     if index.max(initial=0) >= values.size:
         raise ValueError("AR feature origin is outside the value series")
     return values[index]
+
+
+@dataclass(frozen=True)
+class RidgeARFit:
+    """Result of a fixed-grid Ridge AR fit (DEC-013/DEC-015)."""
+
+    alpha: float
+    val_nrmse_std: float
+    candidates: tuple[tuple[float, float], ...]
+    val_predictions: np.ndarray
+    test_predictions: np.ndarray
+
+
+def select_and_fit_ridge_ar(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_val: np.ndarray,
+    y_val: np.ndarray,
+    X_test: np.ndarray,
+    alpha_grid: "list[float] | tuple[float, ...]",
+) -> RidgeARFit:
+    """Fixed-grid Ridge AR with a train-only feature scaler (DEC-015).
+
+    The z-score scaler is fit on train features only. For each alpha, Ridge is
+    fit on train and scored on validation by NRMSE_std; the alpha with the
+    smallest finite validation NRMSE_std is selected (ties resolved by grid
+    order). The model is then refit on train+val with that alpha and evaluated
+    once on test. Target values are never scaled and an intercept is fit.
+    """
+    alpha_grid = list(alpha_grid)
+    if not alpha_grid:
+        raise ValueError("alpha_grid must contain at least one value")
+
+    y_train = np.asarray(y_train, dtype=float)
+    y_val = np.asarray(y_val, dtype=float)
+
+    scaler = StandardScaler().fit(np.asarray(X_train, dtype=float))
+    X_train_s = scaler.transform(np.asarray(X_train, dtype=float))
+    X_val_s = scaler.transform(np.asarray(X_val, dtype=float))
+    X_test_s = scaler.transform(np.asarray(X_test, dtype=float))
+
+    candidates: list[tuple[float, float]] = []
+    best_alpha: float | None = None
+    best_score = np.inf
+    best_val_pred: np.ndarray | None = None
+    for alpha in alpha_grid:
+        model = Ridge(alpha=alpha, fit_intercept=True)
+        model.fit(X_train_s, y_train)
+        val_pred = model.predict(X_val_s)
+        score = nrmse_std(y_val, val_pred)
+        candidates.append((float(alpha), float(score)))
+        if np.isfinite(score) and score < best_score:
+            best_score = float(score)
+            best_alpha = float(alpha)
+            best_val_pred = val_pred
+
+    if best_alpha is None or best_val_pred is None:
+        raise ValueError(
+            "Ridge AR selection failed: no finite validation NRMSE_std; "
+            "degenerate validation targets"
+        )
+
+    X_tv_s = np.vstack([X_train_s, X_val_s])
+    y_tv = np.concatenate([y_train, y_val])
+    final_model = Ridge(alpha=best_alpha, fit_intercept=True)
+    final_model.fit(X_tv_s, y_tv)
+    test_pred = final_model.predict(X_test_s)
+
+    return RidgeARFit(
+        alpha=best_alpha,
+        val_nrmse_std=best_score,
+        candidates=tuple(candidates),
+        val_predictions=best_val_pred,
+        test_predictions=test_pred,
+    )

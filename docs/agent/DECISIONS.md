@@ -91,3 +91,13 @@ MASE использует train-only seasonal scale с лагом 24, а MAE ski
 Дата: 24.07.2026. Статус: accepted.
 
 Persistence, seasonal persistence и Ridge AR представляются отдельным `BaselineSpec`, а не типами reservoir registry. Они дают deterministic single-result, не проходят через multi-seed и не получают фиктивный seed. Persistence-модели имеют selection `none`; Ridge AR сохраняет `fixed_grid` selection отдельно от Optuna HPO. Расширение схемы аддитивно: старые reservoir specs и RunRecord продолжают загружаться, а новые результаты явно сохраняют model family, deterministic status, реально оценённые seeds и selection metadata.
+
+## DEC-015 — Ridge AR: обучение и селекция
+
+Дата: 24.07.2026. Статус: accepted. Уточняет DEC-013/DEC-014.
+
+Ridge AR(24) реализуется через `sklearn.linear_model.Ridge` с `fit_intercept=True` и нескалированным target. Входные lag-признаки z-score-нормализуются `StandardScaler`, обученным **только на train** (train-only scaler), и этот scaler применяется к val/test без переобучения.
+
+Alpha выбирается по единой сетке `[0.001, 0.01, 0.1, 1.0, 10.0]`: для каждого alpha Ridge обучается на train и оценивается на validation по `NRMSE_std`; выбирается alpha с минимальным validation `NRMSE_std` (при равенстве — первый по сетке). После выбора модель **переобучается на train+val** с зафиксированным alpha и один раз оценивается на test.
+
+Причина train+val для финального fit: reservoir-модели тоже обучают финальный readout на train+val после HPO (см. `run_experiment`), поэтому одинаковый бюджет данных для финальной модели сохраняет честность сравнения. Train-only scaler и test-only финальная оценка исключают утечку. Пустой alpha-grid или полностью не-конечный validation-скор считаются явной ошибкой протокола.
