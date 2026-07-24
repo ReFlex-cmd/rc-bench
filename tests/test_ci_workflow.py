@@ -15,14 +15,24 @@ def _load_unit_job() -> dict:
     return workflow["jobs"]["unit"]
 
 
-def test_unit_workflow_uses_python_312_and_no_services() -> None:
+def test_unit_workflow_uses_supported_actions_and_python_312() -> None:
     unit_job = _load_unit_job()
     assert "services" not in unit_job
+
+    action_refs = {
+        step["uses"]
+        for step in unit_job["steps"]
+        if "uses" in step
+    }
+    assert action_refs == {
+        "actions/checkout@v6",
+        "actions/setup-python@v6",
+    }
 
     setup_python = next(
         step
         for step in unit_job["steps"]
-        if step.get("uses", "").startswith("actions/setup-python@")
+        if step.get("uses") == "actions/setup-python@v6"
     )
     assert setup_python["with"]["python-version"] == "3.12"
 
