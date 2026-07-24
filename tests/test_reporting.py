@@ -12,6 +12,7 @@ import yaml
 
 from rc_bench.core.data_provider import get_data_for_experiment
 from rc_bench.core.schema import (
+    BaselineSpec,
     DatasetSpec,
     EnergyResult,
     ExperimentSpec,
@@ -48,6 +49,28 @@ def _make_record(rtype: str = "esn", seed: int = 42) -> RunRecord:
     spec = _SPEC.model_copy(
         deep=True,
         update={"reservoir": ReservoirSpec(type=rtype, params={"units": 20}), "seed": seed},
+    )
+    result = run_pipeline(_DATA, spec)
+    return RunRecord.make(spec, result)
+
+
+def _make_baseline_record(btype: str = "persistence") -> RunRecord:
+    # washout >= seasonal period so the lag-24 reference stays within the split.
+    spec = ExperimentSpec(
+        dataset=DatasetSpec(name="narma10", length=_T),
+        baseline=BaselineSpec(type=btype),
+        protocol=ProtocolSpec(
+            washout=30,
+            train_frac=0.6,
+            val_frac=0.2,
+            forecasting_mode="fixed_horizon",
+            horizon=1,
+            n_seeds=0,
+            selection_metric="nrmse_std",
+            seasonal_period=24,
+        ),
+        readout=ReadoutSpec(alpha_grid=[0.01, 0.1, 1.0]),
+        seed=None,
     )
     result = run_pipeline(_DATA, spec)
     return RunRecord.make(spec, result)
@@ -264,6 +287,24 @@ class TestGenerateReport:
             rows = list(csv.DictReader(f))
         assert len(rows) == 1
         assert rows[0]["nrmse_range"] not in ("", "-", "None")
+
+
+class TestBaselineReporting:
+    def test_report_includes_baseline_without_crashing(self, tmp_path):
+        rec = _make_baseline_record("persistence")
+        generate_report([rec], tmp_path)
+        assert rec.result.model_family == "baseline"
+        assert "persistence" in (tmp_path / "report.csv").read_text()
+        assert "persistence" in (tmp_path / "report.md").read_text()
+
+    def test_plot_metric_bar_accepts_baseline(self, tmp_path):
+        from rc_bench.reporting.plots import plot_metric_bar
+
+        rec = _make_baseline_record("ridge_ar")
+        out = tmp_path / "bar.png"
+        plot_metric_bar([rec], metric="nrmse_range", output_path=out)
+        assert out.exists()
+        assert out.stat().st_size > 0
 
 
 # ---------------------------------------------------------------------------

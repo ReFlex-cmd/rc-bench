@@ -52,7 +52,7 @@ def generate_report(
         md = _get_metrics_dict(r)
         rows.append(
             {
-                "reservoir": r.spec.reservoir.type,
+                "reservoir": r.spec.model_type,
                 "dataset": r.spec.dataset.name,
                 "seed": r.spec.seed,
                 "config_hash": r.result.config_hash,
