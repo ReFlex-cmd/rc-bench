@@ -63,3 +63,9 @@ P0: correctness, real data, EDA, baselines, fair protocol, latency/memory, evide
 Дата: 24.07.2026. Статус: accepted.
 
 `ResultSpec.config_hash` всегда относится к фактически оценённому resolved spec. `ResultSpec` дополнительно сохраняет `frozen_config_hash` и `resolved_spec`, а `RunRecord` хранит исходный `spec` как frozen и отдельный `resolved_spec`. Старые RunRecord без `resolved_spec` загружаются совместимо, используя исходный `spec` в обеих ролях.
+
+## DEC-011 — Фиксация UCI-источника
+
+Дата: 24.07.2026. Статус: accepted.
+
+Канонический manifest версии 1 хранится в `configs/jmlc/dataset_manifest.json` и фиксирует официальный UCI URL, размер и SHA-256 архива и извлечённого файла. Поскольку UCI не публикует подписанный SHA-256, закреплённый архив дополнительно сверяется с официальным legacy endpoint. Изменение байтов upstream считается ошибкой и требует отдельного проверяемого обновления manifest.
