@@ -175,3 +175,49 @@ class TestExperimentSpec:
     def test_reservoir_type_validation(self):
         with pytest.raises(Exception):
             ReservoirSpec(type="unknown_type", params={})
+
+
+class TestBatchTransformStatelessness:
+    """``transform()`` must always start from the reservoir's initial state.
+
+    Regression for the ESN adapter, which wrapped reservoirpy's stateful
+    ``run()`` without resetting and leaked hidden state across splits
+    (train->val) and across repeated calls. A high spectral radius keeps the
+    leak observable well past any washout. Leaky ESN and Logistic are
+    stateless by construction and guard against future regressions.
+    """
+
+    _CONFIGS = {
+        "esn": {"seed": 7, "n_units": 60, "spectral_radius": 1.5},
+        "leaky_esn": {"seed": 7, "units": 60, "sr": 1.5, "leak_rate": 0.3},
+        "logistic": {"seed": 7, "units": 60},
+    }
+
+    @staticmethod
+    def _sequences():
+        rng = np.random.default_rng(0)
+        train = rng.standard_normal((300, 1))
+        val = rng.standard_normal((120, 1))
+        return train, val
+
+    @pytest.mark.parametrize("rtype", ["esn", "leaky_esn", "logistic"])
+    def test_transform_independent_of_prior_split(self, rtype):
+        train, val = self._sequences()
+        config = self._CONFIGS[rtype]
+
+        fresh = get_reservoir(rtype, dict(config))
+        h_val_fresh = fresh.transform(val)
+
+        reused = get_reservoir(rtype, dict(config))
+        reused.transform(train)
+        h_val_reused = reused.transform(val)
+
+        np.testing.assert_allclose(h_val_reused, h_val_fresh, rtol=0, atol=1e-10)
+
+    @pytest.mark.parametrize("rtype", ["esn", "leaky_esn", "logistic"])
+    def test_transform_is_idempotent(self, rtype):
+        _, val = self._sequences()
+        reservoir = get_reservoir(rtype, dict(self._CONFIGS[rtype]))
+        first = reservoir.transform(val)
+        second = reservoir.transform(val)
+        np.testing.assert_allclose(first, second, rtol=0, atol=1e-10)

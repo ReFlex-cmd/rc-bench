@@ -28,6 +28,13 @@ class ESNReservoir(BaseReservoir):
         )
 
     def transform(self, X: np.ndarray) -> np.ndarray:
+        # Contract (see BaseReservoir.transform): always start from the
+        # reservoir's initial (zero) state so splits stay independent
+        # (DEC-012/DEC-013). reservoirpy's run() is stateful and continues from
+        # the last state, so reset before every call once the node is
+        # initialized; the first run() starts from zero on its own.
+        if self._res.initialized:
+            self._res.reset()
         return self._res.run(X)
 
     def sanity_check(self, H: np.ndarray) -> Dict[str, bool]:
