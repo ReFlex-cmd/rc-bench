@@ -13,6 +13,7 @@ import yaml
 from rc_bench.core.data_provider import get_data_for_experiment
 from rc_bench.core.schema import (
     DatasetSpec,
+    EnergyResult,
     ExperimentSpec,
     ProtocolSpec,
     ReadoutSpec,
@@ -147,6 +148,22 @@ class TestRunRecord:
         assert rec.spec.config_hash() == result.frozen_config_hash
         assert rec.resolved_spec.config_hash() == result.config_hash
         assert rec.spec != rec.resolved_spec
+
+
+class TestEnergyContract:
+    def test_pipeline_reports_energy_unavailable(self):
+        result = _run()
+
+        assert result.energy == EnergyResult()
+        assert result.energy.model_dump() == {
+            "status": "unavailable",
+            "reason": "No supported hardware energy counter available",
+            "backend": None,
+        }
+
+    def test_energy_contract_rejects_claimed_backend(self):
+        with pytest.raises(ValueError):
+            EnergyResult(backend="tdp-estimate")
 
 
 # ---------------------------------------------------------------------------

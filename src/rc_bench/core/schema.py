@@ -106,6 +106,14 @@ class MultiSeedResult(BaseModel):
     std: MetricsSummary
 
 
+class EnergyResult(BaseModel):
+    """Explicitly unavailable until a supported hardware counter exists."""
+
+    status: Literal["unavailable"] = "unavailable"
+    reason: str = "No supported hardware energy counter available"
+    backend: None = None
+
+
 class ResultSpec(BaseModel):
     status: Literal["completed", "failed"]
     # ``config_hash`` always identifies the actually evaluated resolved spec.
@@ -122,5 +130,6 @@ class ResultSpec(BaseModel):
     hpo_convergence: Optional[List[float]] = None
     # HPO accounting (n_completed/n_pruned/n_failed/best_trial_number) — see audit/03 §3.7.3.
     hpo_diagnostics: Optional[Dict[str, int]] = None
+    energy: EnergyResult = Field(default_factory=EnergyResult)
     artifact_paths: Dict[str, str] = Field(default_factory=dict)
     error: Optional[str] = None
