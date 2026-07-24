@@ -37,7 +37,12 @@ def run_experiment_task(experiment_id: int) -> None:
             )
 
             artifact_dir = settings.ARTIFACT_DIR / str(experiment_id)
-            result_spec = run_pipeline(data, spec, artifact_dir=artifact_dir)
+            result_spec = run_pipeline(
+                data,
+                spec,
+                artifact_dir=artifact_dir,
+                save_predictions=False,
+            )
 
             db.add(Result(
                 experiment_id=experiment_id,

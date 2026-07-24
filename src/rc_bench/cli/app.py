@@ -222,7 +222,12 @@ def run_cmd(
             val_frac=spec.protocol.val_frac,
             seed=spec.dataset.seed,
         )
-        result_spec = run_pipeline(data, spec, artifact_dir=artifacts)
+        result_spec = run_pipeline(
+            data,
+            spec,
+            artifact_dir=artifacts,
+            save_predictions=artifacts is not None,
+        )
     except Exception as exc:
         console.print(f"[red]Run failed:[/red] {exc}")
         raise typer.Exit(1)

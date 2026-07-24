@@ -319,34 +319,85 @@ class TestPipelineArtifacts:
         result = run_pipeline(_DATA, _SPEC)
         assert result.artifact_paths == {}
 
+    def test_artifact_dir_alone_does_not_enable_predictions(self, tmp_path):
+        art_dir = tmp_path / "artifacts"
+        result = run_pipeline(_DATA, _SPEC, artifact_dir=art_dir)
+        assert result.artifact_paths == {}
+        assert not art_dir.exists()
+
     def test_predictions_npz_saved(self, tmp_path):
-        result = run_pipeline(_DATA, _SPEC, artifact_dir=tmp_path)
+        result = run_pipeline(
+            _DATA,
+            _SPEC,
+            artifact_dir=tmp_path,
+            save_predictions=True,
+        )
         assert "predictions" in result.artifact_paths
         npz_path = Path(result.artifact_paths["predictions"])
         assert npz_path.exists()
         arrays = np.load(npz_path)
         assert "y_test" in arrays
         assert "y_pred" in arrays
+        assert arrays["seed"].item() == _SPEC.seed
         assert len(arrays["y_test"]) == len(arrays["y_pred"])
 
     def test_artifact_dir_created_if_missing(self, tmp_path):
         art_dir = tmp_path / "nested" / "artifacts"
-        result = run_pipeline(_DATA, _SPEC, artifact_dir=art_dir)
+        result = run_pipeline(
+            _DATA,
+            _SPEC,
+            artifact_dir=art_dir,
+            save_predictions=True,
+        )
         assert art_dir.exists()
         assert "predictions" in result.artifact_paths
 
     def test_artifact_path_contains_config_hash(self, tmp_path):
-        result = run_pipeline(_DATA, _SPEC, artifact_dir=tmp_path)
+        result = run_pipeline(
+            _DATA,
+            _SPEC,
+            artifact_dir=tmp_path,
+            save_predictions=True,
+        )
         npz_name = Path(result.artifact_paths["predictions"]).name
         assert _SPEC.config_hash() in npz_name
 
-    def test_multi_seed_no_predictions_artifact(self, tmp_path):
+    def test_predictions_opt_in_requires_artifact_dir(self):
+        with pytest.raises(ValueError, match="artifact_dir"):
+            run_pipeline(_DATA, _SPEC, save_predictions=True)
+
+    def test_multi_seed_artifact_dir_alone_does_not_save_predictions(self, tmp_path):
         spec = _SPEC.model_copy(
             deep=True,
             update={"protocol": ProtocolSpec(washout=20, train_frac=0.6, val_frac=0.2, n_seeds=2)},
         )
-        result = run_pipeline(_DATA, spec, artifact_dir=tmp_path)
+        art_dir = tmp_path / "artifacts"
+        result = run_pipeline(_DATA, spec, artifact_dir=art_dir)
         assert "predictions" not in result.artifact_paths
+        assert not art_dir.exists()
+
+    def test_multi_seed_opt_in_saves_one_representative_seed(self, tmp_path):
+        spec = _SPEC.model_copy(
+            deep=True,
+            update={"protocol": ProtocolSpec(washout=20, train_frac=0.6, val_frac=0.2, n_seeds=3)},
+        )
+        result = run_pipeline(
+            _DATA,
+            spec,
+            artifact_dir=tmp_path,
+            save_predictions=True,
+        )
+
+        assert result.multi_seed_result is not None
+        assert result.multi_seed_result.n_seeds == 3
+        assert "predictions" in result.artifact_paths
+        assert len(list(tmp_path.glob("*.npz"))) == 1
+
+        npz_path = Path(result.artifact_paths["predictions"])
+        assert f"seed{spec.seed}" in npz_path.name
+        arrays = np.load(npz_path)
+        assert arrays["seed"].item() == spec.seed
+        assert len(arrays["y_test"]) == len(arrays["y_pred"])
 
 
 # ---------------------------------------------------------------------------

@@ -17,10 +17,28 @@ from rc_bench.runners.experiment_runner import run_experiment
 from rc_bench.runners.multi_seed import run_multi_seed
 
 
+def _save_predictions_artifact(
+    artifact_dir: Path,
+    config_hash: str,
+    seed: int,
+    result: Dict[str, Any],
+) -> str:
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    npz_path = artifact_dir / f"{config_hash}_seed{seed}_predictions.npz"
+    np.savez(
+        npz_path,
+        y_test=result["y_test"],
+        y_pred=result["preds"],
+        seed=np.asarray(seed, dtype=np.int64),
+    )
+    return str(npz_path)
+
+
 def run_pipeline(
     data: Dict[str, Any],
     spec: ExperimentSpec,
     artifact_dir: Optional[Path] = None,
+    save_predictions: bool = False,
 ) -> ResultSpec:
     """Execute the full pipeline described by *spec*.
 
@@ -32,9 +50,13 @@ def run_pipeline(
     2. Evaluation:
        - n_seeds == 1  → single run_experiment, stores MetricsResult
        - n_seeds  > 1  → run_multi_seed, stores MultiSeedResult
-    3. Optional artifacts: if artifact_dir is given, saves predictions.npz
-       (single-seed only) and populates ResultSpec.artifact_paths.
+    3. Optional demo artifact: only when ``save_predictions`` is true, saves
+       one predictions file in ``artifact_dir`` and populates
+       ResultSpec.artifact_paths. Multi-seed runs save only the first seed.
     """
+    if save_predictions and artifact_dir is None:
+        raise ValueError("artifact_dir is required when save_predictions=True")
+
     frozen_spec = spec.model_copy(deep=True)
     resolved_spec = frozen_spec.model_copy(deep=True)
     hpo_best_params = None
@@ -60,7 +82,28 @@ def run_pipeline(
     n_seeds = resolved_spec.protocol.n_seeds
 
     if n_seeds > 1:
-        multi_seed_result = run_multi_seed(data, resolved_spec, n_seeds)
+        artifact_paths: Dict[str, str] = {}
+        representative_callback = None
+
+        if save_predictions:
+            assert artifact_dir is not None
+
+            def save_representative(seed: int, result: Dict[str, Any]) -> None:
+                artifact_paths["predictions"] = _save_predictions_artifact(
+                    artifact_dir,
+                    resolved_config_hash,
+                    seed,
+                    result,
+                )
+
+            representative_callback = save_representative
+
+        multi_seed_result = run_multi_seed(
+            data,
+            resolved_spec,
+            n_seeds,
+            representative_callback=representative_callback,
+        )
         return ResultSpec(
             status="completed",
             config_hash=resolved_config_hash,
@@ -71,6 +114,7 @@ def run_pipeline(
             hpo_best_params=hpo_best_params,
             hpo_convergence=hpo_convergence,
             hpo_diagnostics=hpo_diagnostics,
+            artifact_paths=artifact_paths,
         )
     else:
         reservoir_config = {
@@ -84,15 +128,14 @@ def run_pipeline(
         result = run_experiment(data, resolved_spec, reservoir)
 
         artifact_paths: Dict[str, str] = {}
-        if artifact_dir is not None:
-            artifact_dir.mkdir(parents=True, exist_ok=True)
-            npz_path = artifact_dir / f"{resolved_config_hash}_predictions.npz"
-            np.savez(
-                npz_path,
-                y_test=result["y_test"],
-                y_pred=result["preds"],
+        if save_predictions:
+            assert artifact_dir is not None
+            artifact_paths["predictions"] = _save_predictions_artifact(
+                artifact_dir,
+                resolved_config_hash,
+                resolved_spec.seed,
+                result,
             )
-            artifact_paths["predictions"] = str(npz_path)
 
         return ResultSpec(
             status="completed",

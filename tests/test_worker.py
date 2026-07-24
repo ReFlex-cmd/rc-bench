@@ -110,7 +110,12 @@ class TestPipelineArtifactFormatCompatibility:
     """Verify that pipeline's npz output is readable by the plot endpoint helper."""
 
     def _run_with_artifacts(self, tmp_path: Path) -> ResultSpec:
-        return run_pipeline(_DATA, _SPEC, artifact_dir=tmp_path)
+        return run_pipeline(
+            _DATA,
+            _SPEC,
+            artifact_dir=tmp_path,
+            save_predictions=True,
+        )
 
     def test_predictions_key_present(self, tmp_path):
         result = self._run_with_artifacts(tmp_path)
@@ -187,7 +192,12 @@ class TestWorkerArtifactDirectoryStructure:
 
     def test_per_experiment_subdirectory(self, tmp_path):
         artifact_dir = tmp_path / "123"
-        result = run_pipeline(_DATA, _SPEC, artifact_dir=artifact_dir)
+        result = run_pipeline(
+            _DATA,
+            _SPEC,
+            artifact_dir=artifact_dir,
+            save_predictions=True,
+        )
         assert artifact_dir.exists()
         npz = Path(result.artifact_paths["predictions"])
         assert npz.parent == artifact_dir
@@ -195,15 +205,30 @@ class TestWorkerArtifactDirectoryStructure:
     def test_different_experiments_get_separate_dirs(self, tmp_path):
         dir_1 = tmp_path / "1"
         dir_2 = tmp_path / "2"
-        r1 = run_pipeline(_DATA, _SPEC, artifact_dir=dir_1)
-        r2 = run_pipeline(_DATA, _SPEC, artifact_dir=dir_2)
+        r1 = run_pipeline(
+            _DATA,
+            _SPEC,
+            artifact_dir=dir_1,
+            save_predictions=True,
+        )
+        r2 = run_pipeline(
+            _DATA,
+            _SPEC,
+            artifact_dir=dir_2,
+            save_predictions=True,
+        )
         assert Path(r1.artifact_paths["predictions"]).parent != \
                Path(r2.artifact_paths["predictions"]).parent
 
     def test_artifact_dir_created_if_not_exists(self, tmp_path):
         deep = tmp_path / "base" / "42"
         assert not deep.exists()
-        run_pipeline(_DATA, _SPEC, artifact_dir=deep)
+        run_pipeline(
+            _DATA,
+            _SPEC,
+            artifact_dir=deep,
+            save_predictions=True,
+        )
         assert deep.exists()
 
 
@@ -267,6 +292,7 @@ class TestWorkerSplitFractions:
 
         def fake_run_pipeline(actual_data, *_args, **_kwargs):
             assert actual_data is data
+            assert _kwargs["save_predictions"] is False
             return ResultSpec(status="completed", config_hash="test-config")
 
         monkeypatch.setattr(tasks, "get_sync_db_session", lambda: session)
