@@ -75,3 +75,19 @@ P0: correctness, real data, EDA, baselines, fair protocol, latency/memory, evide
 Дата: 24.07.2026. Статус: accepted.
 
 Сначала фиксируются непересекающиеся хронологические блоки 60/20/20, затем внутри каждого блока строятся пары `X[:-h] → y[h:]`. Контекст из предыдущего блока не переносится в validation или test. Одинаковая семантика применяется к reservoir-моделям и baseline, чтобы ни одна группа не получала дополнительные первые `h` targets на границе split.
+
+## DEC-013 — Общий JMLC evaluation protocol
+
+Дата: 24.07.2026. Статус: accepted.
+
+Для всех 14 real-data cells используется `fixed_horizon`, в том числе при горизонте 1; `one_step` с unshifted UCI-рядом запрещён как target leakage. Общий per-split warmup равен 200 часам, поэтому оцениваемые target indices для горизонта `h` начинаются с `200 + h`. Persistence, seasonal persistence, Ridge AR и reservoir-модели обязаны использовать один и тот же набор наблюдаемых target timestamps.
+
+Ridge baseline фиксируется как AR(24) с train-only z-score входных lag-признаков, нескалированным target, intercept и общей для обоих горизонтов alpha-grid `[0.001, 0.01, 0.1, 1.0, 10.0]`. Validation selection для Ridge и reservoir HPO выполняется по `NRMSE_std`; legacy synthetic runs сохраняют прежний default `NRMSE_range`.
+
+MASE использует train-only seasonal scale с лагом 24, а MAE skill — seasonal persistence на точно том же test target set. Маска применяется к текущему target; causally forward-filled прошлое значение допустимо как input. Пустой набор или нулевой denominator считается явной ошибкой протокола, а не публикуемым `NaN`/`Infinity`.
+
+## DEC-014 — Явное представление baseline
+
+Дата: 24.07.2026. Статус: accepted.
+
+Persistence, seasonal persistence и Ridge AR представляются отдельным `BaselineSpec`, а не типами reservoir registry. Они дают deterministic single-result, не проходят через multi-seed и не получают фиктивный seed. Persistence-модели имеют selection `none`; Ridge AR сохраняет `fixed_grid` selection отдельно от Optuna HPO. Расширение схемы аддитивно: старые reservoir specs и RunRecord продолжают загружаться, а новые результаты явно сохраняют model family, deterministic status, реально оценённые seeds и selection metadata.

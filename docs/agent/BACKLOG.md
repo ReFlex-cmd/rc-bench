@@ -15,7 +15,7 @@
 | DATA-002 | P0 | Hourly loader, masks, 12k window, causal preprocessing | DATA-001 | 2 ч | DONE |
 | DATA-003 | P0 | Тесты временной оси, split, missing target и train-only scaler | DATA-002 | 1 ч | DONE |
 | VSLICE-001 | P0 | End-to-end horizon-1 persistence + ESN smoke | COR-002, DATA-003 | 1 ч | READY |
-| EDA-001 | P0 | Воспроизводимый EDA report и графики | DATA-002 | 2 ч | IN_PROGRESS |
+| EDA-001 | P0 | Воспроизводимый EDA report и графики | DATA-002 | 2 ч | DONE |
 | BASE-001 | P0 | Persistence и seasonal persistence | DATA-003 | 1 ч | READY |
 | BASE-002 | P0 | Ridge AR и фиксированный alpha search | DATA-003 | 1 ч | READY |
 | MET-001 | P0 | MASE и MAE skill, edge-case tests | BASE-001 | 1 ч | READY |
