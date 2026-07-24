@@ -12,7 +12,7 @@
 | TEST-001 | P0 | Self-contained unit mode и актуальный integration marker | BOOT-002 | 1 ч | DONE |
 | CI-001 | P0 | GitHub Actions: Python 3.12, install, unit gate, CLI smoke | TEST-001 | 1 ч | DONE |
 | DATA-001 | P0 | Download command и dataset manifest с SHA-256 | BOOT-002 | 1 ч | DONE |
-| DATA-002 | P0 | Hourly loader, masks, 12k window, causal preprocessing | DATA-001 | 2 ч | READY |
+| DATA-002 | P0 | Hourly loader, masks, 12k window, causal preprocessing | DATA-001 | 2 ч | IN_PROGRESS |
 | DATA-003 | P0 | Тесты временной оси, split, missing target и train-only scaler | DATA-002 | 1 ч | READY |
 | VSLICE-001 | P0 | End-to-end horizon-1 persistence + ESN smoke | COR-002, DATA-003 | 1 ч | READY |
 | EDA-001 | P0 | Воспроизводимый EDA report и графики | DATA-002 | 2 ч | READY |
