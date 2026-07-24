@@ -1,14 +1,20 @@
+from pathlib import Path
+
 import numpy as np
 import pytest
 
+import rc_bench.core.data_provider as data_provider_module
 from rc_bench.core.data_provider import (
     DATASET_CATALOG,
+    JMLC_RAW_DATA_ENV,
+    UCI_HOUSEHOLD_POWER_DATASET,
     generate_lorenz63,
     generate_mackey_glass,
     generate_narma10,
     generate_narma30,
     get_data_for_experiment,
 )
+from rc_bench.data.jmlc import HourlyPowerSeries
 
 
 # ---------------------------------------------------------------------------
@@ -22,6 +28,28 @@ def _check_generator(gen, T, seed=42):
     assert np.all(np.isfinite(X)), "X contains non-finite values"
     assert np.all(np.isfinite(y)), "y contains non-finite values"
     return X, y
+
+
+def _uci_hourly_series() -> HourlyPowerSeries:
+    length = 12_000
+    start = np.datetime64("2006-12-16T17", "h")
+    timestamps = np.arange(
+        start,
+        start + np.timedelta64(length, "h"),
+        dtype="datetime64[h]",
+    )
+    values = np.arange(length, dtype=np.float64)
+    observed = np.ones(length, dtype=np.bool_)
+    for index in (5, 7_205, 9_605):
+        observed[index] = False
+        values[index] = values[index - 1]
+    return HourlyPowerSeries(
+        timestamps=timestamps,
+        values=values,
+        observed_mask=observed,
+        imputed_mask=~observed,
+        valid_minute_counts=np.where(observed, 60, 0),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -222,13 +250,99 @@ class TestGetDataForExperiment:
         assert data["X_train"].shape[1] == DATASET_CATALOG[name]["input_dim"]
 
 
+class TestUCIHouseholdPowerProvider:
+    def test_returns_unshifted_splits_masks_and_timestamps(
+        self,
+        monkeypatch,
+        tmp_path,
+    ):
+        raw_path = tmp_path / "household_power_consumption.txt"
+        captured = {}
+
+        def fake_loader(path):
+            captured["path"] = Path(path)
+            return _uci_hourly_series()
+
+        monkeypatch.setenv(JMLC_RAW_DATA_ENV, str(raw_path))
+        monkeypatch.setattr(
+            data_provider_module,
+            "load_uci_household_power_series",
+            fake_loader,
+        )
+
+        data = get_data_for_experiment(
+            UCI_HOUSEHOLD_POWER_DATASET,
+            length=12_000,
+            train_frac=0.6,
+            val_frac=0.2,
+            seed=999,
+        )
+
+        assert captured["path"] == raw_path
+        assert set(data) == {
+            "X_train",
+            "y_train",
+            "X_val",
+            "y_val",
+            "X_test",
+            "y_test",
+            "target_observed_mask_train",
+            "target_observed_mask_val",
+            "target_observed_mask_test",
+            "timestamps_train",
+            "timestamps_val",
+            "timestamps_test",
+        }
+        assert data["X_train"].shape == (7_200, 1)
+        assert data["X_val"].shape == (2_400, 1)
+        assert data["X_test"].shape == (2_400, 1)
+        np.testing.assert_array_equal(data["X_train"][:, 0], data["y_train"])
+        np.testing.assert_array_equal(data["X_val"][:, 0], data["y_val"])
+        np.testing.assert_array_equal(data["X_test"][:, 0], data["y_test"])
+        assert not data["target_observed_mask_train"][5]
+        assert not data["target_observed_mask_val"][5]
+        assert not data["target_observed_mask_test"][5]
+        assert data["timestamps_train"][-1] < data["timestamps_val"][0]
+        assert data["timestamps_val"][-1] < data["timestamps_test"][0]
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            {"length": 11_999},
+            {"train_frac": 0.5},
+            {"val_frac": 0.1},
+        ],
+    )
+    def test_rejects_noncanonical_length_or_split(self, monkeypatch, overrides):
+        monkeypatch.setattr(
+            data_provider_module,
+            "load_uci_household_power_series",
+            lambda path: pytest.fail(f"loader must not run for {path}"),
+        )
+        kwargs = {
+            "length": 12_000,
+            "train_frac": 0.6,
+            "val_frac": 0.2,
+            **overrides,
+        }
+
+        with pytest.raises(ValueError, match="requires length=12000"):
+            get_data_for_experiment(UCI_HOUSEHOLD_POWER_DATASET, **kwargs)
+
+
 # ---------------------------------------------------------------------------
 # TestDatasetCatalog
 # ---------------------------------------------------------------------------
 
 class TestDatasetCatalog:
-    def test_all_four_datasets_present(self):
-        assert set(DATASET_CATALOG) == {"narma10", "narma30", "mackey_glass", "lorenz63"}
+    def test_all_datasets_present(self):
+        assert set(DATASET_CATALOG) == {
+            "narma10",
+            "narma30",
+            "mackey_glass",
+            "lorenz63",
+            UCI_HOUSEHOLD_POWER_DATASET,
+        }
 
     def test_required_keys_in_each_entry(self):
         required = {"description", "default_length", "input_dim", "output_dim"}

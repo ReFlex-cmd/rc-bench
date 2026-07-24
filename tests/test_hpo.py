@@ -96,6 +96,58 @@ class TestSearchSpaces:
 # ---------------------------------------------------------------------------
 
 class TestRunHPO:
+    def test_hpo_never_reads_test_partition(self):
+        class GuardedData(dict):
+            def __getitem__(self, key):
+                if str(key).endswith("_test"):
+                    raise AssertionError(f"HPO accessed forbidden key: {key}")
+                return super().__getitem__(key)
+
+            def get(self, key, default=None):
+                if str(key).endswith("_test"):
+                    raise AssertionError(f"HPO accessed forbidden key: {key}")
+                return super().get(key, default)
+
+        guarded_data = GuardedData(_DATA)
+
+        result = run_hpo(_BASE_SPEC, guarded_data, n_trials=3, seed=0)
+
+        assert np.isfinite(result.best_score)
+
+    def test_hpo_propagates_invalid_observed_target_mask(self):
+        masked_data = {
+            **_DATA,
+            "target_observed_mask_train": np.ones(
+                len(_DATA["y_train"]),
+                dtype=np.bool_,
+            ),
+            "target_observed_mask_val": np.zeros(
+                len(_DATA["y_val"]),
+                dtype=np.bool_,
+            ),
+        }
+
+        with pytest.raises(
+            ValueError,
+            match="val.*zero observed targets after washout/forecast alignment",
+        ):
+            run_hpo(_BASE_SPEC, masked_data, n_trials=1, seed=0)
+
+    def test_hpo_rejects_partial_train_validation_mask_group(self):
+        partial_data = {
+            **_DATA,
+            "target_observed_mask_train": np.ones(
+                len(_DATA["y_train"]),
+                dtype=np.bool_,
+            ),
+        }
+
+        with pytest.raises(
+            ValueError,
+            match="target observed masks must provide train and val together",
+        ):
+            run_hpo(_BASE_SPEC, partial_data, n_trials=1, seed=0)
+
     def test_returns_hpo_result(self):
         result = run_hpo(_BASE_SPEC, _DATA, n_trials=3, seed=0)
         assert isinstance(result.best_params, dict)
