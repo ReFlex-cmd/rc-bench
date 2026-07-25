@@ -1,0 +1,371 @@
+{
+  "spec": {
+    "dataset": {
+      "name": "uci_household_power",
+      "length": 12000,
+      "seed": 42,
+      "raw_sha256": "4259c9d7ece5dbee9ab8d53682baac68d791c864f0f64a52b4043cb3b90894b7"
+    },
+    "reservoir": {
+      "type": "logistic",
+      "params": {}
+    },
+    "baseline": null,
+    "protocol": {
+      "washout": 200,
+      "train_frac": 0.6,
+      "val_frac": 0.2,
+      "forecasting_mode": "fixed_horizon",
+      "horizon": 24,
+      "use_hpo": true,
+      "hpo_budget": 60,
+      "n_seeds": 5,
+      "selection_metric": "nrmse_std",
+      "seasonal_period": 24,
+      "mode": "best_effort"
+    },
+    "readout": {
+      "type": "ridge",
+      "alpha_grid": [
+        0.001,
+        0.01,
+        0.1,
+        1.0,
+        10.0
+      ]
+    },
+    "seed": 42
+  },
+  "resolved_spec": {
+    "dataset": {
+      "name": "uci_household_power",
+      "length": 12000,
+      "seed": 42,
+      "raw_sha256": "4259c9d7ece5dbee9ab8d53682baac68d791c864f0f64a52b4043cb3b90894b7"
+    },
+    "reservoir": {
+      "type": "logistic",
+      "params": {
+        "r_min": 3.828617983827845,
+        "r_max": 3.9641722059743345,
+        "input_scale": 3.524632331024518,
+        "coupling": 0.7205246414706591
+      }
+    },
+    "baseline": null,
+    "protocol": {
+      "washout": 200,
+      "train_frac": 0.6,
+      "val_frac": 0.2,
+      "forecasting_mode": "fixed_horizon",
+      "horizon": 24,
+      "use_hpo": true,
+      "hpo_budget": 60,
+      "n_seeds": 5,
+      "selection_metric": "nrmse_std",
+      "seasonal_period": 24,
+      "mode": "best_effort"
+    },
+    "readout": {
+      "type": "ridge",
+      "alpha_grid": [
+        17.184858548621445
+      ]
+    },
+    "seed": 42
+  },
+  "result": {
+    "status": "completed",
+    "config_hash": "074940d6664cda44",
+    "frozen_config_hash": "a51c64856228e0f1",
+    "resolved_spec": {
+      "dataset": {
+        "name": "uci_household_power",
+        "length": 12000,
+        "seed": 42,
+        "raw_sha256": "4259c9d7ece5dbee9ab8d53682baac68d791c864f0f64a52b4043cb3b90894b7"
+      },
+      "reservoir": {
+        "type": "logistic",
+        "params": {
+          "r_min": 3.828617983827845,
+          "r_max": 3.9641722059743345,
+          "input_scale": 3.524632331024518,
+          "coupling": 0.7205246414706591
+        }
+      },
+      "baseline": null,
+      "protocol": {
+        "washout": 200,
+        "train_frac": 0.6,
+        "val_frac": 0.2,
+        "forecasting_mode": "fixed_horizon",
+        "horizon": 24,
+        "use_hpo": true,
+        "hpo_budget": 60,
+        "n_seeds": 5,
+        "selection_metric": "nrmse_std",
+        "seasonal_period": 24,
+        "mode": "best_effort"
+      },
+      "readout": {
+        "type": "ridge",
+        "alpha_grid": [
+          17.184858548621445
+        ]
+      },
+      "seed": 42
+    },
+    "metrics": null,
+    "multi_seed_result": {
+      "n_seeds": 5,
+      "seeds": [
+        42,
+        43,
+        44,
+        45,
+        46
+      ],
+      "metrics_per_seed": [
+        {
+          "rmse": 0.903025470519536,
+          "nrmse_range": 0.14448638706531874,
+          "nrmse_std": 0.9367500277634258,
+          "nrmse_var": 0.877500614514779,
+          "mae": 0.6856073313572426,
+          "mse": 0.8154550004070292,
+          "prediction_horizon": 1,
+          "val_nrmse_range": 0.1612942204640869,
+          "val_nrmse_std": 0.9249149480100178,
+          "mase": 0.9499613587629734,
+          "mae_skill": 0.07982507530349758,
+          "train_time": 0.6491471099998307,
+          "inference_latency": 0.12927687899991724,
+          "peak_memory": 113298180
+        },
+        {
+          "rmse": 0.9096815416983015,
+          "nrmse_range": 0.1455513754937361,
+          "nrmse_std": 0.9436546778148985,
+          "nrmse_var": 0.8904841509619401,
+          "mae": 0.6924844397201397,
+          "mse": 0.8275205073065987,
+          "prediction_horizon": 1,
+          "val_nrmse_range": 0.16126362295250268,
+          "val_nrmse_std": 0.924739491656066,
+          "mase": 0.9594901180191574,
+          "mae_skill": 0.07059509426255506,
+          "train_time": 0.5510364290003054,
+          "inference_latency": 0.10963448099982998,
+          "peak_memory": 113298076
+        },
+        {
+          "rmse": 0.9031484817651225,
+          "nrmse_range": 0.14450606917952644,
+          "nrmse_std": 0.9368776330098781,
+          "nrmse_var": 0.877739699234192,
+          "mae": 0.685587288001584,
+          "mse": 0.8156771801146459,
+          "prediction_horizon": 1,
+          "val_nrmse_range": 0.16202180915588615,
+          "val_nrmse_std": 0.9290871846537854,
+          "mase": 0.9499335871617888,
+          "mae_skill": 0.07985197611455996,
+          "train_time": 0.6951386249997995,
+          "inference_latency": 0.08734084399975472,
+          "peak_memory": 113298214
+        },
+        {
+          "rmse": 0.9065115809762678,
+          "nrmse_range": 0.14504417366298142,
+          "nrmse_std": 0.9403663311499195,
+          "nrmse_var": 0.8842888367603602,
+          "mae": 0.6885729683253461,
+          "mse": 0.8217632464440925,
+          "prediction_horizon": 1,
+          "val_nrmse_range": 0.16239466246570994,
+          "val_nrmse_std": 0.9312252501013802,
+          "mase": 0.9540704754467758,
+          "mae_skill": 0.07584480168477825,
+          "train_time": 0.715847950999887,
+          "inference_latency": 0.11061758400001054,
+          "peak_memory": 113298030
+        },
+        {
+          "rmse": 0.8985041936897856,
+          "nrmse_range": 0.14376297119790482,
+          "nrmse_std": 0.932059898487938,
+          "nrmse_var": 0.8687356543693455,
+          "mae": 0.679615158134972,
+          "mse": 0.8073097860781319,
+          "prediction_horizon": 0,
+          "val_nrmse_range": 0.1619525514636184,
+          "val_nrmse_std": 0.9286900379075547,
+          "mase": 0.9416587447799772,
+          "mae_skill": 0.08786735736698703,
+          "train_time": 0.639980714000103,
+          "inference_latency": 0.07963462299994717,
+          "peak_memory": 113298030
+        }
+      ],
+      "mean": {
+        "rmse": 0.9041742537298028,
+        "nrmse_range": 0.1446701953198935,
+        "nrmse_std": 0.937941713645212,
+        "nrmse_var": 0.8797497911681234,
+        "mae": 0.6863734371078568,
+        "mse": 0.8175451440700996,
+        "prediction_horizon": 0.8,
+        "val_nrmse_range": 0.16178537330036083,
+        "val_nrmse_std": 0.9277313824657607,
+        "mase": 0.9510228568341346,
+        "mae_skill": 0.07879686094647557,
+        "train_time": 0.6502301657999852,
+        "inference_latency": 0.10330088219989193,
+        "peak_memory": 113298106.0
+      },
+      "std": {
+        "rmse": 0.004192696366008187,
+        "nrmse_range": 0.0006708421520357415,
+        "nrmse_std": 0.004349277584609177,
+        "nrmse_var": 0.008158429531694678,
+        "mae": 0.004718621981516257,
+        "mse": 0.007581569798406968,
+        "prediction_horizon": 0.4472135954999579,
+        "val_nrmse_range": 0.0004920717105082359,
+        "val_nrmse_std": 0.0028217035875953947,
+        "mase": 0.006538011401039642,
+        "mae_skill": 0.00633300933045382,
+        "train_time": 0.06377320192406515,
+        "inference_latency": 0.01989482126467947,
+        "peak_memory": 86.0116271209887
+      }
+    },
+    "hpo_best_params": {
+      "reservoir_params": {
+        "r_min": 3.828617983827845,
+        "r_max": 3.9641722059743345,
+        "input_scale": 3.524632331024518,
+        "coupling": 0.7205246414706591
+      },
+      "readout_alpha": 17.184858548621445
+    },
+    "hpo_convergence": [
+      1.024791127139172,
+      1.0093726440318236,
+      1.0093726440318236,
+      1.0093726440318236,
+      1.0093726440318236,
+      1.0093726440318236,
+      1.0093726440318236,
+      0.9849257065445682,
+      0.9849257065445682,
+      0.9849257065445682,
+      0.9849257065445682,
+      0.9548446530043413,
+      0.9371794118367245,
+      0.9371794118367245,
+      0.9335610526887512,
+      0.9335610526887512,
+      0.9335610526887512,
+      0.9335610526887512,
+      0.9335610526887512,
+      0.9335610526887512,
+      0.9335610526887512,
+      0.9335610526887512,
+      0.9335610526887512,
+      0.9335610526887512,
+      0.9335610526887512,
+      0.9335610526887512,
+      0.9335610526887512,
+      0.9335610526887512,
+      0.9335610526887512,
+      0.9335610526887512,
+      0.9335610526887512,
+      0.9335610526887512,
+      0.9335610526887512,
+      0.9335610526887512,
+      0.9249149480100178,
+      0.9249149480100178,
+      0.9249149480100178,
+      0.9249149480100178,
+      0.9249149480100178,
+      0.9249149480100178,
+      0.9249149480100178,
+      0.9249149480100178,
+      0.9249149480100178
+    ],
+    "hpo_diagnostics": {
+      "n_trials": 60,
+      "n_completed": 43,
+      "n_pruned": 17,
+      "n_failed": 0,
+      "best_trial_number": 43
+    },
+    "model_family": "reservoir",
+    "deterministic": false,
+    "evaluated_seeds": [
+      42,
+      43,
+      44,
+      45,
+      46
+    ],
+    "selection": {
+      "method": "optuna",
+      "metric": "nrmse_std",
+      "candidates": [],
+      "selected_params": {
+        "reservoir_params": {
+          "r_min": 3.828617983827845,
+          "r_max": 3.9641722059743345,
+          "input_scale": 3.524632331024518,
+          "coupling": 0.7205246414706591
+        },
+        "readout_alpha": 17.184858548621445
+      }
+    },
+    "evaluation": {
+      "target_start_index": 224,
+      "n_test_targets": 2176,
+      "seasonal_period": 24,
+      "mase_scale": 0.7217212837478264,
+      "seasonal_test_mae": 0.7450836932807897,
+      "n_mase_scale_terms": 7084
+    },
+    "energy": {
+      "status": "unavailable",
+      "reason": "No supported hardware energy counter available",
+      "backend": null,
+      "domains": [],
+      "window_target_met": null,
+      "net_energy_per_inference_mj": null,
+      "net_samples_per_joule": null,
+      "energy_delay_product_j_s": null
+    },
+    "artifact_paths": {
+      "predictions": "reports/jmlc_2026/best_effort/artifacts/074940d6664cda44_seed42_predictions.npz"
+    },
+    "error": null
+  },
+  "timestamp": "2026-07-25T23:41:09.363339+00:00",
+  "git_hash": "b0f930c",
+  "python_version": "3.12.13",
+  "rc_bench_version": "0.1.0",
+  "lib_versions": {
+    "numpy": "2.3.5",
+    "scipy": "1.16.3",
+    "scikit-learn": "1.7.2",
+    "optuna": "4.9.0",
+    "reservoirpy": "0.4.1",
+    "pydantic": "2.12.5",
+    "matplotlib": "3.10.7"
+  },
+  "hardware_profile": {
+    "cpu_model": "AMD Ryzen 5 7430U with Radeon Graphics",
+    "cpu_count": 12,
+    "platform": "Linux-7.1.3-200.fc44.x86_64-x86_64-with-glibc2.43",
+    "machine": "x86_64",
+    "ram_total_gb": 15.01
+  }
+}

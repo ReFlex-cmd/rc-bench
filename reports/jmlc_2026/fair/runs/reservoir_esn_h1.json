@@ -21,7 +21,8 @@
       "hpo_budget": 20,
       "n_seeds": 5,
       "selection_metric": "nrmse_std",
-      "seasonal_period": 24
+      "seasonal_period": 24,
+      "mode": "fair"
     },
     "readout": {
       "type": "ridge",
@@ -61,7 +62,8 @@
       "hpo_budget": 20,
       "n_seeds": 5,
       "selection_metric": "nrmse_std",
-      "seasonal_period": 24
+      "seasonal_period": 24,
+      "mode": "fair"
     },
     "readout": {
       "type": "ridge",
@@ -101,7 +103,8 @@
         "hpo_budget": 20,
         "n_seeds": 5,
         "selection_metric": "nrmse_std",
-        "seasonal_period": 24
+        "seasonal_period": 24,
+        "mode": "fair"
       },
       "readout": {
         "type": "ridge",
@@ -134,9 +137,9 @@
           "val_nrmse_std": 0.651081441939479,
           "mase": 0.6170324514677451,
           "mae_skill": 0.403248998432733,
-          "train_time": 0.5495731419941876,
-          "inference_latency": 0.1213936590065714,
-          "peak_memory": 67526089
+          "train_time": 0.7017699379998703,
+          "inference_latency": 0.10149582199983342,
+          "peak_memory": 67526357
         },
         {
           "rmse": 0.6463226892561467,
@@ -150,9 +153,9 @@
           "val_nrmse_std": 0.6564014005595793,
           "mase": 0.6239520472197507,
           "mae_skill": 0.39655684523134527,
-          "train_time": 0.8108903410029598,
-          "inference_latency": 0.0867545950168278,
-          "peak_memory": 67525626
+          "train_time": 0.6588280450000639,
+          "inference_latency": 0.0956343449997803,
+          "peak_memory": 67525815
         },
         {
           "rmse": 0.6431749191122801,
@@ -166,9 +169,9 @@
           "val_nrmse_std": 0.6534555278750639,
           "mase": 0.621032419506012,
           "mae_skill": 0.39938050670690095,
-          "train_time": 0.7378802610037383,
-          "inference_latency": 0.17613059098948725,
-          "peak_memory": 67525258
+          "train_time": 0.6287279910002326,
+          "inference_latency": 0.1430033349997757,
+          "peak_memory": 67525446
         },
         {
           "rmse": 0.6438572108443648,
@@ -182,9 +185,9 @@
           "val_nrmse_std": 0.6561042139972775,
           "mase": 0.6216861231507248,
           "mae_skill": 0.39874828987003497,
-          "train_time": 0.827811972994823,
-          "inference_latency": 0.0956019599980209,
-          "peak_memory": 67525491
+          "train_time": 0.7575891820001743,
+          "inference_latency": 0.08772977400030868,
+          "peak_memory": 67525858
         },
         {
           "rmse": 0.6429754115595574,
@@ -198,9 +201,9 @@
           "val_nrmse_std": 0.6529400199628748,
           "mase": 0.6199774429655962,
           "mae_skill": 0.40040080686392765,
-          "train_time": 0.8767716999864206,
-          "inference_latency": 0.10085993900429457,
-          "peak_memory": 67527043
+          "train_time": 0.7069954280000275,
+          "inference_latency": 0.08173408200036647,
+          "peak_memory": 67528012
         }
       ],
       "mean": {
@@ -215,9 +218,9 @@
         "val_nrmse_std": 0.653996520866855,
         "mase": 0.6207360968619657,
         "mae_skill": 0.3996670894209884,
-        "train_time": 0.7605854833964258,
-        "inference_latency": 0.11614814880304039,
-        "peak_memory": 67525901.4
+        "train_time": 0.6907821168000737,
+        "inference_latency": 0.10191947160001291,
+        "peak_memory": 67526297.6
       },
       "std": {
         "rmse": 0.001955904867293783,
@@ -231,9 +234,9 @@
         "val_nrmse_std": 0.0022434554485557187,
         "mase": 0.0025310688800906657,
         "mae_skill": 0.002447874314611823,
-        "train_time": 0.1280536526968192,
-        "inference_latency": 0.03586525123776054,
-        "peak_memory": 706.5198511011563
+        "train_time": 0.04929139090353009,
+        "inference_latency": 0.024167972600507983,
+        "peak_memory": 1011.6903182298425
       }
     },
     "hpo_best_params": {
@@ -297,15 +300,20 @@
     "energy": {
       "status": "unavailable",
       "reason": "No supported hardware energy counter available",
-      "backend": null
+      "backend": null,
+      "domains": [],
+      "window_target_met": null,
+      "net_energy_per_inference_mj": null,
+      "net_samples_per_joule": null,
+      "energy_delay_product_j_s": null
     },
     "artifact_paths": {
       "predictions": "reports/jmlc_2026/fair/artifacts/74d9ffcbb30aebe2_seed42_predictions.npz"
     },
     "error": null
   },
-  "timestamp": "2026-07-25T01:32:35.869298+00:00",
-  "git_hash": "c564b6e",
+  "timestamp": "2026-07-25T23:35:00.862916+00:00",
+  "git_hash": "b0f930c",
   "python_version": "3.12.13",
   "rc_bench_version": "0.1.0",
   "lib_versions": {
