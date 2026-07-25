@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from rc_bench.reporting.pareto import (
+    MissingCostAxis,
     ParetoPoint,
     generate_pareto_plots,
     load_points,
@@ -63,7 +64,14 @@ class TestParetoFront:
         assert [p.model for p in pareto_front(points)] == ["a", "b", "c"]
 
 
-def _bundle(tmp_path: Path, *, profile_hash: str | None = None) -> Path:
+def _bundle(
+    tmp_path: Path,
+    *,
+    profile_hash: str | None = None,
+    energy: bool | str = True,
+) -> Path:
+    """``energy=False`` — счётчика на машине не было; ``energy="partial"`` —
+    он был не для всех ячеек, что для оси стоимости то же самое, что не был."""
     bundle = tmp_path / "jmlc_2026"
     rows = [
         {
@@ -87,6 +95,13 @@ def _bundle(tmp_path: Path, *, profile_hash: str | None = None) -> Path:
     (bundle / "aggregates").mkdir(parents=True)
     (bundle / "aggregates" / "matrix_table.json").write_text(json.dumps(rows))
 
+    def _energy_of(index: int, row: dict) -> float | None:
+        if energy is False:
+            return None
+        if energy == "partial" and index == 0:
+            return None
+        return 0.0004 if row["family"] == "baseline" else 0.031
+
     profiles = [
         {
             "family": row["family"],
@@ -97,8 +112,10 @@ def _bundle(tmp_path: Path, *, profile_hash: str | None = None) -> Path:
             "p50_ns": 500.0 if row["family"] == "baseline" else 45_000.0,
             "deployable_p50_ns": 500.0 if row["family"] == "baseline" else 45_000.0,
             "working_state_bytes": 192 if row["family"] == "baseline" else 8_192,
+            "energy_status": "measured" if energy is not False else "unavailable",
+            "net_energy_per_inference_mj": _energy_of(index, row),
         }
-        for row in rows
+        for index, row in enumerate(rows)
     ]
     (bundle / "profiles").mkdir(parents=True)
     (bundle / "profiles" / "summary.json").write_text(json.dumps(profiles))
@@ -132,7 +149,23 @@ class TestLoadPoints:
 
     def test_unknown_cost_axis_is_refused(self, tmp_path):
         with pytest.raises(ValueError, match="unknown cost axis"):
-            load_points(_bundle(tmp_path), "energy")
+            load_points(_bundle(tmp_path), "carbon")
+
+    def test_energy_is_a_cost_axis_when_every_cell_measured_it(self, tmp_path):
+        bundle = _bundle(tmp_path)
+
+        points = {(p.model, p.horizon): p for p in load_points(bundle, "energy")}
+
+        assert points[("esn", 1)].cost == pytest.approx(0.031)
+
+    @pytest.mark.parametrize("energy", [False, "partial"])
+    def test_an_unmeasured_energy_axis_raises_missing_cost_axis(self, tmp_path, energy):
+        """Ось без чисел — не повод молча нарисовать график по подмножеству
+        ячеек: сравнение по неполной оси хуже отсутствующего сравнения."""
+        bundle = _bundle(tmp_path, energy=energy)
+
+        with pytest.raises(MissingCostAxis, match="net_energy_per_inference_mj"):
+            load_points(bundle, "energy")
 
 
 class TestFigures:
@@ -143,10 +176,22 @@ class TestFigures:
         assert Path(out).is_file()
         assert Path(out).stat().st_size > 5_000  # a real rendering, not an empty canvas
 
-    def test_both_figures_are_generated(self, tmp_path):
+    def test_every_axis_is_generated_when_the_data_is_there(self, tmp_path):
         bundle = _bundle(tmp_path)
         written = generate_pareto_plots(bundle, tmp_path / "plots")
 
-        assert set(written) == {"latency", "memory"}
+        assert set(written) == {"latency", "memory", "energy"}
         for path in written.values():
             assert Path(path).is_file()
+
+    def test_an_unmeasurable_axis_is_reported_as_skipped_not_dropped(self, tmp_path):
+        """Пропуск обязан быть виден в возвращаемом словаре: молча выпавшая
+        ось читается как «энергию не собирались измерять»."""
+        bundle = _bundle(tmp_path, energy=False)
+
+        written = generate_pareto_plots(bundle, tmp_path / "plots")
+
+        assert set(written) == {"latency", "memory", "energy"}
+        assert written["energy"].startswith("skipped:")
+        assert Path(written["latency"]).is_file()
+        assert not (tmp_path / "plots" / "pareto_quality_energy.png").exists()

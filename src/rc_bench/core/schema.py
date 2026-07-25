@@ -211,12 +211,60 @@ class MultiSeedResult(BaseModel):
     std: MetricsSummary
 
 
-class EnergyResult(BaseModel):
-    """Explicitly unavailable until a supported hardware counter exists."""
+#: Поля, которые есть ровно тогда, когда энергия действительно измерена.
+MEASURED_ENERGY_FIELDS = (
+    "backend",
+    "window_target_met",
+    "net_energy_per_inference_mj",
+    "net_samples_per_joule",
+    "energy_delay_product_j_s",
+)
 
-    status: Literal["unavailable"] = "unavailable"
-    reason: str = "No supported hardware energy counter available"
-    backend: None = None
+
+class EnergyResult(BaseModel):
+    """Энергия вывода: измерена аппаратным счётчиком или явно недоступна.
+
+    Прокси-метрики активности (MAC, разреженность состояния, спайки) сюда не
+    попадают ни при каких условиях — они живут в блоке ``activity`` профиля.
+    Перевод прокси в джоули требует модели энергии железа, которой у нас нет,
+    а число в поле «энергия» читается как измерение (DEC-007).
+
+    ``unavailable`` остаётся значением по умолчанию, поэтому записи, сделанные
+    до появления RAPL-бэкенда, читаются без миграции.
+    """
+
+    status: Literal["measured", "unavailable"] = "unavailable"
+    reason: Optional[str] = "No supported hardware energy counter available"
+    backend: Optional[Literal["intel_rapl"]] = None
+    domains: List[str] = Field(default_factory=list)
+    #: Успело ли окно измерения набрать заданную длительность. ``False``
+    #: означает, что измерение упёрлось в потолок шагов раньше, и его точность
+    #: ограничена периодом обновления счётчика; без этого поля усечённое окно
+    #: было бы неотличимо от полноценного.
+    window_target_met: Optional[bool] = None
+    net_energy_per_inference_mj: Optional[float] = None
+    net_samples_per_joule: Optional[float] = None
+    energy_delay_product_j_s: Optional[float] = None
+
+    @model_validator(mode="after")
+    def _status_and_numbers_must_agree(self) -> "EnergyResult":
+        """Статус и числа — два утверждения об одном факте; расходиться им
+        нельзя. ``measured`` без чисел не говорит, сколько намерено, а числа
+        при ``unavailable`` появились неизвестно откуда."""
+        present = [
+            name for name in MEASURED_ENERGY_FIELDS if getattr(self, name) is not None
+        ]
+        if self.status == "measured":
+            missing = [
+                name for name in MEASURED_ENERGY_FIELDS if getattr(self, name) is None
+            ]
+            if missing:
+                raise ValueError(f"status='measured' requires {', '.join(missing)}")
+        elif present:
+            raise ValueError(
+                f"status='unavailable' cannot carry {', '.join(present)}"
+            )
+        return self
 
 
 class SelectionCandidate(BaseModel):

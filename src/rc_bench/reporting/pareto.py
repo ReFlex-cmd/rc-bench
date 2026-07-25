@@ -34,10 +34,24 @@ INK_MUTED = "#8a8983"
 # would rank the models by how many framework calls they happen to make. The
 # as-implemented numbers stay in the profile artifacts and are discussed in the
 # bundle README.
+#
+# Энергия — измеренная величина, а не прокси: она берётся из RAPL-счётчика и
+# существует только там, где счётчик был доступен. Поэтому ось может целиком
+# отсутствовать (см. MissingCostAxis), и это нормальный, названный исход.
 COST_AXES: Dict[str, Tuple[str, str, float]] = {
     "latency": ("deployable_p50_ns", "Задержка одного шага, p50 (мс, log)", 1e-6),
     "memory": ("working_state_bytes", "Рабочее состояние (КиБ, log)", 1 / 1024),
+    "energy": ("net_energy_per_inference_mj", "Энергия одного вывода (мДж, log)", 1.0),
 }
+
+
+class MissingCostAxis(ValueError):
+    """Ось стоимости не измерена хотя бы у одной ячейки.
+
+    Отдельный тип, потому что это не поломка бандла, а отсутствие данных:
+    вызывающий может пропустить ось, тогда как остальные ValueError из
+    ``load_points`` означают нарушение traceability и пропускаться не должны.
+    """
 
 
 @dataclass(frozen=True)
@@ -87,7 +101,9 @@ def load_points(bundle_dir: str | Path, cost: str) -> List[ParetoPoint]:
             )
         value = profile.get(cost_key)
         if value is None:
-            raise ValueError(f"{key[0]}/{key[1]} h{key[2]}: profile has no {cost_key}")
+            raise MissingCostAxis(
+                f"{key[0]}/{key[1]} h{key[2]}: profile has no {cost_key}"
+            )
         points.append(
             ParetoPoint(
                 family=row["family"],
@@ -309,11 +325,21 @@ def plot_quality_cost(
 
 
 def generate_pareto_plots(bundle_dir: str | Path, output_dir: str | Path) -> Dict[str, str]:
-    """Write both Pareto figures for the bundle; return {cost: path}."""
+    """Write the Pareto figures for the bundle; return {cost: path or reason}.
+
+    Ось, не измеренная хотя бы у одной ячейки, пропускается с названной
+    причиной, а не рисуется по остатку: график с дырами сравнивает модели по
+    разным множествам ячеек. Ключ при этом остаётся в ответе — молча выпавшая
+    ось читалась бы как «эту стоимость не собирались измерять».
+    """
     output_dir = Path(output_dir)
     written: Dict[str, str] = {}
     for cost in COST_AXES:
-        points = load_points(bundle_dir, cost)
+        try:
+            points = load_points(bundle_dir, cost)
+        except MissingCostAxis as exc:
+            written[cost] = f"skipped: {exc}"
+            continue
         written[cost] = plot_quality_cost(
             points, cost, output_dir / f"pareto_quality_{cost}.png"
         )
