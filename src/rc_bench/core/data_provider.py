@@ -1,5 +1,38 @@
-import numpy as np
+import os
+from pathlib import Path
 from typing import Any, Dict, Tuple
+
+import numpy as np
+
+from rc_bench.data.jmlc import (
+    DEFAULT_WINDOW_HOURS,
+    TRAIN_FRACTION,
+    VALIDATION_FRACTION,
+    load_uci_household_power_series,
+    split_hourly_series,
+)
+
+
+UCI_HOUSEHOLD_POWER_DATASET = "uci_household_power"
+JMLC_RAW_DATA_ENV = "RC_BENCH_UCI_RAW_PATH"
+_DEFAULT_JMLC_RAW_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "data"
+    / "raw"
+    / "household_power_consumption.txt"
+)
+
+
+def resolve_uci_raw_path() -> Path:
+    """Path of the raw UCI file this process will read.
+
+    ``RC_BENCH_UCI_RAW_PATH`` overrides the in-repo default, so callers that
+    need to verify the bytes (see ``runners.jmlc_matrix``) must resolve the
+    path the same way the loader does rather than assuming the default.
+    """
+    configured_path = os.environ.get(JMLC_RAW_DATA_ENV)
+    return Path(configured_path) if configured_path else _DEFAULT_JMLC_RAW_PATH
+
 
 DATASET_CATALOG: Dict[str, Dict[str, Any]] = {
     "narma10": {
@@ -23,6 +56,12 @@ DATASET_CATALOG: Dict[str, Dict[str, Any]] = {
     "lorenz63": {
         "description": "Lorenz-63 attractor, x-component one-step prediction (RK4, dt=0.01, sub=10)",
         "default_length": 5000,
+        "input_dim": 1,
+        "output_dim": 1,
+    },
+    UCI_HOUSEHOLD_POWER_DATASET: {
+        "description": "UCI Individual Household Electric Power Consumption, hourly Global_active_power",
+        "default_length": DEFAULT_WINDOW_HOURS,
         "input_dim": 1,
         "output_dim": 1,
     },
@@ -176,9 +215,46 @@ def get_data_for_experiment(
     backward-compatibility with existing callers/configs.
     """
     key = dataset_name.lower()
+
+    if key == UCI_HOUSEHOLD_POWER_DATASET:
+        if (
+            length != DEFAULT_WINDOW_HOURS
+            or train_frac != TRAIN_FRACTION
+            or val_frac != VALIDATION_FRACTION
+        ):
+            raise ValueError(
+                f"{UCI_HOUSEHOLD_POWER_DATASET} requires "
+                f"length={DEFAULT_WINDOW_HOURS}, "
+                f"train_frac={TRAIN_FRACTION}, "
+                f"val_frac={VALIDATION_FRACTION}"
+            )
+
+        raw_path = resolve_uci_raw_path()
+        splits = split_hourly_series(
+            load_uci_household_power_series(raw_path)
+        )
+
+        return {
+            "X_train": splits.train.X,
+            "y_train": splits.train.y,
+            "X_val": splits.val.X,
+            "y_val": splits.val.y,
+            "X_test": splits.test.X,
+            "y_test": splits.test.y,
+            "target_observed_mask_train": splits.train.observed_mask,
+            "target_observed_mask_val": splits.val.observed_mask,
+            "target_observed_mask_test": splits.test.observed_mask,
+            "timestamps_train": splits.train.timestamps,
+            "timestamps_val": splits.val.timestamps,
+            "timestamps_test": splits.test.timestamps,
+        }
+
     gen = _GENERATORS.get(key)
     if gen is None:
-        raise ValueError(f"Unknown dataset: {dataset_name!r}. Available: {list(_GENERATORS)}")
+        raise ValueError(
+            f"Unknown dataset: {dataset_name!r}. "
+            f"Available: {list(DATASET_CATALOG)}"
+        )
 
     X, y = gen(length, seed=seed)
 

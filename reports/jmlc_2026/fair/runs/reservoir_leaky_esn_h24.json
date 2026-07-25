@@ -1,0 +1,333 @@
+{
+  "spec": {
+    "dataset": {
+      "name": "uci_household_power",
+      "length": 12000,
+      "seed": 42,
+      "raw_sha256": "4259c9d7ece5dbee9ab8d53682baac68d791c864f0f64a52b4043cb3b90894b7"
+    },
+    "reservoir": {
+      "type": "leaky_esn",
+      "params": {}
+    },
+    "baseline": null,
+    "protocol": {
+      "washout": 200,
+      "train_frac": 0.6,
+      "val_frac": 0.2,
+      "forecasting_mode": "fixed_horizon",
+      "horizon": 24,
+      "use_hpo": true,
+      "hpo_budget": 20,
+      "n_seeds": 5,
+      "selection_metric": "nrmse_std",
+      "seasonal_period": 24
+    },
+    "readout": {
+      "type": "ridge",
+      "alpha_grid": [
+        0.001,
+        0.01,
+        0.1,
+        1.0,
+        10.0
+      ]
+    },
+    "seed": 42
+  },
+  "resolved_spec": {
+    "dataset": {
+      "name": "uci_household_power",
+      "length": 12000,
+      "seed": 42,
+      "raw_sha256": "4259c9d7ece5dbee9ab8d53682baac68d791c864f0f64a52b4043cb3b90894b7"
+    },
+    "reservoir": {
+      "type": "leaky_esn",
+      "params": {
+        "sr": 1.285456288522114,
+        "leak_rate": 0.5421358448210954,
+        "input_scaling": 0.30506035095567907,
+        "density": 0.025570573750584486
+      }
+    },
+    "baseline": null,
+    "protocol": {
+      "washout": 200,
+      "train_frac": 0.6,
+      "val_frac": 0.2,
+      "forecasting_mode": "fixed_horizon",
+      "horizon": 24,
+      "use_hpo": true,
+      "hpo_budget": 20,
+      "n_seeds": 5,
+      "selection_metric": "nrmse_std",
+      "seasonal_period": 24
+    },
+    "readout": {
+      "type": "ridge",
+      "alpha_grid": [
+        0.1264392595203213
+      ]
+    },
+    "seed": 42
+  },
+  "result": {
+    "status": "completed",
+    "config_hash": "1e6c7f97f50d61f2",
+    "frozen_config_hash": "bc3d56553c128e5f",
+    "resolved_spec": {
+      "dataset": {
+        "name": "uci_household_power",
+        "length": 12000,
+        "seed": 42,
+        "raw_sha256": "4259c9d7ece5dbee9ab8d53682baac68d791c864f0f64a52b4043cb3b90894b7"
+      },
+      "reservoir": {
+        "type": "leaky_esn",
+        "params": {
+          "sr": 1.285456288522114,
+          "leak_rate": 0.5421358448210954,
+          "input_scaling": 0.30506035095567907,
+          "density": 0.025570573750584486
+        }
+      },
+      "baseline": null,
+      "protocol": {
+        "washout": 200,
+        "train_frac": 0.6,
+        "val_frac": 0.2,
+        "forecasting_mode": "fixed_horizon",
+        "horizon": 24,
+        "use_hpo": true,
+        "hpo_budget": 20,
+        "n_seeds": 5,
+        "selection_metric": "nrmse_std",
+        "seasonal_period": 24
+      },
+      "readout": {
+        "type": "ridge",
+        "alpha_grid": [
+          0.1264392595203213
+        ]
+      },
+      "seed": 42
+    },
+    "metrics": null,
+    "multi_seed_result": {
+      "n_seeds": 5,
+      "seeds": [
+        42,
+        43,
+        44,
+        45,
+        46
+      ],
+      "metrics_per_seed": [
+        {
+          "rmse": 0.8680240257402994,
+          "nrmse_range": 0.1388860662955086,
+          "nrmse_std": 0.9004414125149032,
+          "nrmse_var": 0.8107947373718342,
+          "mae": 0.6628240757004908,
+          "mse": 0.7534657092623959,
+          "prediction_horizon": 1,
+          "val_nrmse_range": 0.15187355319197676,
+          "val_nrmse_std": 0.8708936944577649,
+          "mase": 0.9183934167196951,
+          "mae_skill": 0.11040319137584287,
+          "train_time": 0.5304352460079826,
+          "inference_latency": 0.14618508197600022,
+          "peak_memory": 67108606
+        },
+        {
+          "rmse": 0.8481101967652791,
+          "nrmse_range": 0.13569980267928747,
+          "nrmse_std": 0.8797838779777057,
+          "nrmse_var": 0.7740196719494906,
+          "mae": 0.6402958332925109,
+          "mse": 0.7192909058572404,
+          "prediction_horizon": 1,
+          "val_nrmse_range": 0.15317497746524572,
+          "val_nrmse_std": 0.8783564960422614,
+          "mase": 0.887178815023327,
+          "mae_skill": 0.1406390462350231,
+          "train_time": 0.616624944988871,
+          "inference_latency": 0.12179197199293412,
+          "peak_memory": 67108058
+        },
+        {
+          "rmse": 0.8360184410844896,
+          "nrmse_range": 0.13376509081497134,
+          "nrmse_std": 0.8672405413394032,
+          "nrmse_var": 0.752106156542661,
+          "mae": 0.62742650479443,
+          "mse": 0.6989268338333402,
+          "prediction_horizon": 0,
+          "val_nrmse_range": 0.15099058268901744,
+          "val_nrmse_std": 0.8658304465962531,
+          "mase": 0.8693473767827199,
+          "mae_skill": 0.15791137230273522,
+          "train_time": 0.7117708460136782,
+          "inference_latency": 0.0897467450122349,
+          "peak_memory": 67108212
+        },
+        {
+          "rmse": 0.8576999259577328,
+          "nrmse_range": 0.1372341839001796,
+          "nrmse_std": 0.8897317469808983,
+          "nrmse_var": 0.7916225815856813,
+          "mae": 0.6444388994719691,
+          "mse": 0.7356491629879003,
+          "prediction_horizon": 0,
+          "val_nrmse_range": 0.1503763186295018,
+          "val_nrmse_std": 0.8623080512553869,
+          "mase": 0.892919349870718,
+          "mae_skill": 0.13507850824872636,
+          "train_time": 0.5558861469908152,
+          "inference_latency": 0.1241021350142546,
+          "peak_memory": 67107996
+        },
+        {
+          "rmse": 0.8849744284899186,
+          "nrmse_range": 0.141598174129173,
+          "nrmse_std": 0.9180248481594945,
+          "nrmse_var": 0.8427696218382631,
+          "mae": 0.6675259010570346,
+          "mse": 0.7831797390810581,
+          "prediction_horizon": 0,
+          "val_nrmse_range": 0.15227099723932963,
+          "val_nrmse_std": 0.8731727714100362,
+          "mase": 0.9249081551130643,
+          "mae_skill": 0.10409272531821068,
+          "train_time": 0.537626530014677,
+          "inference_latency": 0.12571658502565697,
+          "peak_memory": 67108218
+        }
+      ],
+      "mean": {
+        "rmse": 0.8589654036075439,
+        "nrmse_range": 0.137436663563824,
+        "nrmse_std": 0.891044485394481,
+        "nrmse_var": 0.794262553857586,
+        "mae": 0.6485022428632872,
+        "mse": 0.738102470204387,
+        "prediction_horizon": 0.4,
+        "val_nrmse_range": 0.1517372858430143,
+        "val_nrmse_std": 0.8701122919523406,
+        "mase": 0.8985494227019049,
+        "mae_skill": 0.12962496869610765,
+        "train_time": 0.5904687428032048,
+        "inference_latency": 0.12150850380421616,
+        "peak_memory": 67108218.0
+      },
+      "std": {
+        "rmse": 0.018738516807507828,
+        "nrmse_range": 0.0029982106605718237,
+        "nrmse_std": 0.01943832894279209,
+        "nrmse_var": 0.03471366550778722,
+        "mae": 0.01654582363918091,
+        "mse": 0.03225915931287971,
+        "prediction_horizon": 0.5477225575051662,
+        "val_nrmse_range": 0.0010931801317748818,
+        "val_nrmse_std": 0.006268660103486309,
+        "mase": 0.02292550325419267,
+        "mae_skill": 0.022206664551099636,
+        "train_time": 0.07581329579802429,
+        "inference_latency": 0.020262391618847166,
+        "peak_memory": 237.41524803600967
+      }
+    },
+    "hpo_best_params": {
+      "reservoir_params": {
+        "sr": 1.285456288522114,
+        "leak_rate": 0.5421358448210954,
+        "input_scaling": 0.30506035095567907,
+        "density": 0.025570573750584486
+      },
+      "readout_alpha": 0.1264392595203213
+    },
+    "hpo_convergence": [
+      0.9180931223290617,
+      0.9031050658516712,
+      0.9031050658516712,
+      0.8942494959827235,
+      0.8942494959827235,
+      0.8942494959827235,
+      0.8908526413319205,
+      0.8742892442655833,
+      0.8742892442655833,
+      0.8742892442655833,
+      0.8742892442655833,
+      0.8742892442655833,
+      0.8708936944577649
+    ],
+    "hpo_diagnostics": {
+      "n_trials": 20,
+      "n_completed": 13,
+      "n_pruned": 7,
+      "n_failed": 0,
+      "best_trial_number": 18
+    },
+    "model_family": "reservoir",
+    "deterministic": false,
+    "evaluated_seeds": [
+      42,
+      43,
+      44,
+      45,
+      46
+    ],
+    "selection": {
+      "method": "optuna",
+      "metric": "nrmse_std",
+      "candidates": [],
+      "selected_params": {
+        "reservoir_params": {
+          "sr": 1.285456288522114,
+          "leak_rate": 0.5421358448210954,
+          "input_scaling": 0.30506035095567907,
+          "density": 0.025570573750584486
+        },
+        "readout_alpha": 0.1264392595203213
+      }
+    },
+    "evaluation": {
+      "target_start_index": 224,
+      "n_test_targets": 2176,
+      "seasonal_period": 24,
+      "mase_scale": 0.7217212837478264,
+      "seasonal_test_mae": 0.7450836932807897,
+      "n_mase_scale_terms": 7084
+    },
+    "energy": {
+      "status": "unavailable",
+      "reason": "No supported hardware energy counter available",
+      "backend": null
+    },
+    "artifact_paths": {
+      "predictions": "reports/jmlc_2026/fair/artifacts/1e6c7f97f50d61f2_seed42_predictions.npz"
+    },
+    "error": null
+  },
+  "timestamp": "2026-07-25T01:33:14.330573+00:00",
+  "git_hash": "1cc5b3b",
+  "python_version": "3.12.13",
+  "rc_bench_version": "0.1.0",
+  "lib_versions": {
+    "numpy": "2.3.5",
+    "scipy": "1.16.3",
+    "scikit-learn": "1.7.2",
+    "optuna": "4.9.0",
+    "reservoirpy": "0.4.1",
+    "pydantic": "2.12.5",
+    "matplotlib": "3.10.7"
+  },
+  "hardware_profile": {
+    "cpu_model": "AMD Ryzen 5 7430U with Radeon Graphics",
+    "cpu_count": 12,
+    "platform": "Linux-7.1.3-200.fc44.x86_64-x86_64-with-glibc2.43",
+    "machine": "x86_64",
+    "ram_total_gb": 15.01
+  }
+}

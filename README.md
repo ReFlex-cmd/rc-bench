@@ -4,7 +4,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-289%20passed-brightgreen.svg)](#)
+[![Tests](https://img.shields.io/badge/tests-469%20passed-brightgreen.svg)](#)
 
 ## Описание
 
@@ -176,7 +176,77 @@ src/rc_bench/
 ├── database.py / models.py / schemas.py / config.py
 ```
 
-## Результаты бенчмарков
+## Результаты на реальных данных (UCI household power)
+
+Синтетические ряды ниже проверяют реализацию; отдельный контур на **реальных** данных
+проверяет, стоят ли резервуарные модели своих затрат на задаче, у которой есть сильные
+классические baseline.
+
+Протокол (полностью описан в [reports/jmlc_2026/README.md](reports/jmlc_2026/README.md)):
+UCI Individual Household Electric Power Consumption, почасовой ряд, окно 12 000 часов,
+хронологический split 60/20/20, каузальный препроцессинг, режим `fixed_horizon` на обоих
+горизонтах, общий washout 200 ч. Все семь моделей на данном горизонте оцениваются на **одном
+и том же** наборе наблюдаемых target-таймстемпов — это записано в каждый RunRecord и
+проверяется валидатором, а не декларируется. Reservoir-модели получают равный бюджет
+20 Optuna-trials по validation NRMSE_std, затем лучшая конфигурация оценивается на 5 seeds;
+Ridge AR(24) выбирает alpha по фиксированной сетке; persistence и seasonal persistence
+детерминированы. Test не участвует в селекции ни у одного семейства.
+
+| Модель | Семейство | NRMSE_std, h=1 | NRMSE_std, h=24 | MAE skill, h=1 | MAE skill, h=24 |
+|---|---|---|---|---|---|
+| esn | reservoir | 0.6647 ± 0.0020 | 0.8705 ± 0.0048 | 0.400 | 0.150 |
+| leaky_esn | reservoir | 0.6743 ± 0.0012 | 0.8910 ± 0.0194 | 0.397 | 0.130 |
+| ridge_ar | baseline | 0.6760 | 0.9023 | 0.388 | 0.120 |
+| logistic | reservoir | 0.7513 ± 0.0042 | 0.9656 ± 0.0108 | 0.309 | 0.060 |
+| persistence | baseline | 0.7682 | 1.1273 | 0.354 | 0.000 |
+| lsm | reservoir | 0.9449 ± 0.0029 | 0.9832 ± 0.0014 | 0.028 | -0.019 |
+| seasonal_persistence | baseline | 1.1230 | 1.1273 | 0.000 | 0.000 |
+
+`±` — SD по 5 seeds; у детерминированных baseline разброса нет. MAE skill считается
+относительно seasonal persistence на том же test-наборе, поэтому у самой seasonal
+persistence он равен нулю по построению.
+
+**Что из этого следует.** ESN — лучшая модель на обоих горизонтах, но её преимущество над
+Ridge AR составляет 1.7 % (h=1) и 3.5 % (h=24). Разброс по seeds меньше этого разрыва, то
+есть порядок устойчив, однако кратного превосходства резервуарных моделей эти данные не
+показывают. LSM на суточном горизонте **хуже** сезонного наива (skill −0.019) и публикуется
+как есть.
+
+Отдельный профилировочный проход измеряет цену этой точности. На h=1 ESN стоит 21.8 мкс на
+шаг вывода против 3.4 мкс у Ridge AR, требует 2.3 КиБ рабочего состояния против 192 Б и
+75 КиБ под саму модель против 1.5 КиБ. То есть **резервуар покупает 1.7–3.5 % точности за
+примерно пятикратную стоимость вывода** — на Pareto-фронте остаются persistence, Ridge AR
+и ESN, а leaky ESN, logistic и LSM доминируются (дороже и хуже одновременно). Графики:
+`reports/jmlc_2026/plots/pareto_quality_{latency,memory}.png`.
+
+Проверить бандл целиком:
+
+```bash
+poetry run python scripts/validate_evidence.py reports/jmlc_2026
+```
+
+### Демонстрация за одну команду
+
+```bash
+# 1. Данные: скачиваются один раз и сверяются по SHA-256 с манифестом (~20 МБ архив)
+poetry run python scripts/download_jmlc_data.py
+
+# 2. Один прогон по тому же протоколу, что и матрица: ESN, h=1, 1 seed, без HPO (~13 с)
+poetry run rcbench run configs/jmlc/demo.yaml \
+    --output reports/demo/run.json --artifacts reports/demo/artifacts
+```
+
+Вывод показывает NRMSE_std, MASE и MAE skill — те же метрики, что и в таблице выше.
+Числа демо отличаются от опубликованных намеренно: одна фиксированная конфигурация без HPO
+и без усреднения по seeds — это демонстрация пути `данные → split → модель → метрики →
+RunRecord`, а не оценка.
+
+Если данных под рукой нет, готовые артефакты уже лежат в репозитории:
+`reports/jmlc_2026/fair/runs/*.json` (полные RunRecord) и
+`reports/jmlc_2026/fair/artifacts/*.npz` (предсказания и test-таргеты) — по ним
+воспроизводятся все опубликованные числа без единого прогона.
+
+## Результаты бенчмарков на синтетических рядах
 
 Унифицированный протокол: HPO budget **100 trials** (P0/P1) или 50 (P2/P3); **10 seeds**
 (P0/P1) или 5 (P2/P3); washout=200; train/val/test = 60/20/20; Ridge-readout с тюнингом α

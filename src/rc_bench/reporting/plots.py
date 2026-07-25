@@ -28,7 +28,7 @@ def plot_metric_bar(
         v = getattr(m, metric, None)
         if v is None:
             continue
-        labels.append(f"{r.spec.reservoir.type}\n{r.spec.dataset.name}")
+        labels.append(f"{r.spec.model_type}\n{r.spec.dataset.name}")
         values.append(float(v))
 
     if not values:

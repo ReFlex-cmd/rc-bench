@@ -11,6 +11,7 @@ Covers:
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -109,7 +110,12 @@ class TestPipelineArtifactFormatCompatibility:
     """Verify that pipeline's npz output is readable by the plot endpoint helper."""
 
     def _run_with_artifacts(self, tmp_path: Path) -> ResultSpec:
-        return run_pipeline(_DATA, _SPEC, artifact_dir=tmp_path)
+        return run_pipeline(
+            _DATA,
+            _SPEC,
+            artifact_dir=tmp_path,
+            save_predictions=True,
+        )
 
     def test_predictions_key_present(self, tmp_path):
         result = self._run_with_artifacts(tmp_path)
@@ -186,7 +192,12 @@ class TestWorkerArtifactDirectoryStructure:
 
     def test_per_experiment_subdirectory(self, tmp_path):
         artifact_dir = tmp_path / "123"
-        result = run_pipeline(_DATA, _SPEC, artifact_dir=artifact_dir)
+        result = run_pipeline(
+            _DATA,
+            _SPEC,
+            artifact_dir=artifact_dir,
+            save_predictions=True,
+        )
         assert artifact_dir.exists()
         npz = Path(result.artifact_paths["predictions"])
         assert npz.parent == artifact_dir
@@ -194,16 +205,108 @@ class TestWorkerArtifactDirectoryStructure:
     def test_different_experiments_get_separate_dirs(self, tmp_path):
         dir_1 = tmp_path / "1"
         dir_2 = tmp_path / "2"
-        r1 = run_pipeline(_DATA, _SPEC, artifact_dir=dir_1)
-        r2 = run_pipeline(_DATA, _SPEC, artifact_dir=dir_2)
+        r1 = run_pipeline(
+            _DATA,
+            _SPEC,
+            artifact_dir=dir_1,
+            save_predictions=True,
+        )
+        r2 = run_pipeline(
+            _DATA,
+            _SPEC,
+            artifact_dir=dir_2,
+            save_predictions=True,
+        )
         assert Path(r1.artifact_paths["predictions"]).parent != \
                Path(r2.artifact_paths["predictions"]).parent
 
     def test_artifact_dir_created_if_not_exists(self, tmp_path):
         deep = tmp_path / "base" / "42"
         assert not deep.exists()
-        run_pipeline(_DATA, _SPEC, artifact_dir=deep)
+        run_pipeline(
+            _DATA,
+            _SPEC,
+            artifact_dir=deep,
+            save_predictions=True,
+        )
         assert deep.exists()
+
+
+# ---------------------------------------------------------------------------
+# TestWorkerSplitFractions
+# ---------------------------------------------------------------------------
+
+
+class TestWorkerSplitFractions:
+    """Regression coverage for protocol split fractions in the Celery entry point."""
+
+    def test_forwards_protocol_split_fractions_to_data_provider(
+        self, tmp_path, monkeypatch
+    ):
+        from rc_bench import tasks
+
+        experiment_id = 17
+        experiment = SimpleNamespace(
+            config={
+                "dataset": {"name": "narma10", "length": 300, "seed": 42},
+                "reservoir": {"type": "esn", "params": {"n_units": 20}},
+                "protocol": {
+                    "washout": 20,
+                    "n_seeds": 1,
+                    "train_frac": 0.5,
+                    "val_frac": 0.3,
+                },
+                "seed": 42,
+            },
+            status=tasks.ExperimentStatus.QUEUED,
+        )
+        captured = {}
+        data = object()
+
+        class FakeSession:
+            def __init__(self):
+                self.added = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def get(self, model, actual_id):
+                assert model is tasks.Experiment
+                assert actual_id == experiment_id
+                return experiment
+
+            def add(self, value):
+                self.added.append(value)
+
+            def commit(self):
+                pass
+
+        session = FakeSession()
+
+        def fake_get_data_for_experiment(**kwargs):
+            captured.update(kwargs)
+            return data
+
+        def fake_run_pipeline(actual_data, *_args, **_kwargs):
+            assert actual_data is data
+            assert _kwargs["save_predictions"] is False
+            return ResultSpec(status="completed", config_hash="test-config")
+
+        monkeypatch.setattr(tasks, "get_sync_db_session", lambda: session)
+        monkeypatch.setattr(
+            tasks, "get_data_for_experiment", fake_get_data_for_experiment
+        )
+        monkeypatch.setattr(tasks, "run_pipeline", fake_run_pipeline)
+        monkeypatch.setattr(tasks.settings, "ARTIFACT_DIR", tmp_path)
+
+        tasks.run_experiment_task.run(experiment_id)
+
+        assert captured["train_frac"] == 0.5
+        assert captured["val_frac"] == 0.3
+        assert experiment.status == tasks.ExperimentStatus.COMPLETED
 
 
 # ---------------------------------------------------------------------------

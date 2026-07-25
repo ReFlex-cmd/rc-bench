@@ -6,6 +6,7 @@ Uses Typer's CliRunner — no DB, no Celery, pure in-process.
 import json
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
@@ -115,6 +116,33 @@ class TestRun:
         assert "nrmse_range" in result.output
         assert "prediction_horizon" in result.output
 
+    def test_baseline_relative_metrics_are_shown_when_computed(self, tmp_path):
+        """The demo has to print the metrics the defence actually argues from."""
+        spec = json.loads(json.dumps(_ESN_SPEC))
+        spec["protocol"].update(
+            # washout must exceed the seasonal lag, otherwise the first target
+            # has no causal 24-step history and the protocol refuses the run.
+            washout=30,
+            forecasting_mode="fixed_horizon",
+            horizon=1,
+            seasonal_period=24,
+            selection_metric="nrmse_std",
+        )
+        p = tmp_path / "seasonal_spec.json"
+        p.write_text(json.dumps(spec))
+
+        result = runner.invoke(app, ["run", str(p)])
+        assert result.exit_code == 0, result.output
+        assert "mase" in result.output
+        assert "mae_skill" in result.output
+
+    def test_baseline_relative_metrics_are_absent_when_not_computed(self, tmp_path):
+        """No seasonal period means no MASE — an empty row would imply otherwise."""
+        p = self._spec_file(tmp_path)
+        result = runner.invoke(app, ["run", str(p)])
+        assert "mase" not in result.output
+        assert "mae_skill" not in result.output
+
     def test_output_file_written(self, tmp_path):
         p = self._spec_file(tmp_path)
         out = tmp_path / "result.json"
@@ -143,6 +171,47 @@ class TestRun:
         m1 = json.loads(out1.read_text())["result"]["metrics"]["nrmse_range"]
         m2 = json.loads(out2.read_text())["result"]["metrics"]["nrmse_range"]
         assert m1 == m2
+
+    def test_forwards_protocol_split_fractions_to_data_provider(
+        self, tmp_path, monkeypatch
+    ):
+        spec = {
+            **_ESN_SPEC,
+            "protocol": {
+                "washout": 20,
+                "n_seeds": 1,
+                "train_frac": 0.5,
+                "val_frac": 0.3,
+            },
+        }
+        p = tmp_path / "spec.json"
+        p.write_text(json.dumps(spec))
+        captured = {}
+        data = object()
+
+        def fake_get_data_for_experiment(**kwargs):
+            captured.update(kwargs)
+            return data
+
+        def fake_run_pipeline(actual_data, *_args, **_kwargs):
+            assert actual_data is data
+            return object()
+
+        monkeypatch.setattr(
+            "rc_bench.core.data_provider.get_data_for_experiment",
+            fake_get_data_for_experiment,
+        )
+        monkeypatch.setattr(
+            "rc_bench.runners.pipeline.run_pipeline",
+            fake_run_pipeline,
+        )
+        monkeypatch.setattr("rc_bench.cli.app._print_result", lambda _result: None)
+
+        result = runner.invoke(app, ["run", str(p)])
+
+        assert result.exit_code == 0, result.output
+        assert captured["train_frac"] == 0.5
+        assert captured["val_frac"] == 0.3
 
     def test_missing_spec_file_exits_nonzero(self):
         result = runner.invoke(app, ["run", "/nonexistent.json"])
@@ -197,3 +266,104 @@ class TestAggregate:
     def test_nonexistent_dir_exits_nonzero(self):
         result = runner.invoke(app, ["aggregate", "/nonexistent_dir"])
         assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# eda
+# ---------------------------------------------------------------------------
+
+
+class TestEDA:
+    def test_missing_raw_file_exits_nonzero(self, tmp_path):
+        result = runner.invoke(
+            app,
+            ["eda", str(tmp_path / "missing.txt")],
+        )
+        assert result.exit_code != 0
+        assert "Raw data file not found" in result.output
+
+    def test_manifest_filename_must_match_raw_file(self, tmp_path, monkeypatch):
+        raw_path = tmp_path / "wrong.txt"
+        raw_path.write_text("fixture")
+        manifest_path = tmp_path / "manifest.json"
+        manifest_path.write_text("{}")
+        monkeypatch.setattr(
+            "rc_bench.data.download.DatasetManifest.load",
+            lambda _path: SimpleNamespace(
+                raw_filename="household_power_consumption.txt",
+                raw_sha256="a" * 64,
+            ),
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "eda",
+                str(raw_path),
+                "--manifest",
+                str(manifest_path),
+                "--output-dir",
+                str(tmp_path / "report"),
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "does not match manifest filename" in result.output
+
+    def test_verified_raw_is_loaded_and_reported(self, tmp_path, monkeypatch):
+        raw_path = tmp_path / "household_power_consumption.txt"
+        raw_path.write_text("fixture")
+        manifest_path = tmp_path / "manifest.json"
+        manifest_path.write_text("{}")
+        output_dir = tmp_path / "report"
+        series = object()
+        captured = {}
+
+        monkeypatch.setattr(
+            "rc_bench.data.download.DatasetManifest.load",
+            lambda _path: SimpleNamespace(
+                raw_filename=raw_path.name,
+                raw_sha256="b" * 64,
+            ),
+        )
+        monkeypatch.setattr(
+            "rc_bench.data.download.download_dataset",
+            lambda _manifest, _directory: raw_path,
+        )
+        monkeypatch.setattr(
+            "rc_bench.data.jmlc.load_uci_household_power_series",
+            lambda _path: series,
+        )
+
+        def fake_generate(actual_series, actual_output, *, raw_sha256):
+            captured.update(
+                series=actual_series,
+                output=actual_output,
+                raw_sha256=raw_sha256,
+            )
+            return [actual_output / "eda_report.md"]
+
+        monkeypatch.setattr(
+            "rc_bench.reporting.eda.generate_eda_report",
+            fake_generate,
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "eda",
+                str(raw_path),
+                "--manifest",
+                str(manifest_path),
+                "--output-dir",
+                str(output_dir),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert captured == {
+            "series": series,
+            "output": output_dir,
+            "raw_sha256": "b" * 64,
+        }
+        assert "eda_report.md" in result.output

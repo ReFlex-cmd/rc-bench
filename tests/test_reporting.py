@@ -12,7 +12,9 @@ import yaml
 
 from rc_bench.core.data_provider import get_data_for_experiment
 from rc_bench.core.schema import (
+    BaselineSpec,
     DatasetSpec,
+    EnergyResult,
     ExperimentSpec,
     ProtocolSpec,
     ReadoutSpec,
@@ -52,6 +54,28 @@ def _make_record(rtype: str = "esn", seed: int = 42) -> RunRecord:
     return RunRecord.make(spec, result)
 
 
+def _make_baseline_record(btype: str = "persistence") -> RunRecord:
+    # washout >= seasonal period so the lag-24 reference stays within the split.
+    spec = ExperimentSpec(
+        dataset=DatasetSpec(name="narma10", length=_T),
+        baseline=BaselineSpec(type=btype),
+        protocol=ProtocolSpec(
+            washout=30,
+            train_frac=0.6,
+            val_frac=0.2,
+            forecasting_mode="fixed_horizon",
+            horizon=1,
+            n_seeds=0,
+            selection_metric="nrmse_std",
+            seasonal_period=24,
+        ),
+        readout=ReadoutSpec(alpha_grid=[0.01, 0.1, 1.0]),
+        seed=None,
+    )
+    result = run_pipeline(_DATA, spec)
+    return RunRecord.make(spec, result)
+
+
 # ---------------------------------------------------------------------------
 # TestRunRecord
 # ---------------------------------------------------------------------------
@@ -62,14 +86,46 @@ class TestRunRecord:
         result = _run()
         rec = RunRecord.make(_SPEC, result)
         assert rec.timestamp != ""
-        assert rec.hostname != ""
         assert rec.python_version != ""
         assert rec.rc_bench_version != ""
+
+    def test_record_carries_no_machine_identity(self, tmp_path):
+        """DEC-008: published RunRecords must not carry hostname/username/paths.
+
+        RunRecords are themselves published evidence, so the record must not
+        contain the identifier at all — sanitizing it away at bundle time would
+        leave every raw record a leak waiting to be copied.
+        """
+        import socket
+
+        rec = RunRecord.make(_SPEC, _run())
+        assert not hasattr(rec, "hostname")
+
+        path = tmp_path / "run.json"
+        save_run_record(rec, path)
+        dumped = path.read_text()
+        assert "hostname" not in dumped
+        hostname = socket.gethostname()
+        if hostname:
+            assert hostname not in dumped
+
+    def test_load_record_written_with_a_hostname(self, tmp_path):
+        """Records written before DEC-008 sanitization still load (field ignored)."""
+        rec = RunRecord.make(_SPEC, _run())
+        payload = json.loads(rec.model_dump_json())
+        payload["hostname"] = "some-old-machine"
+        path = tmp_path / "legacy_hostname.json"
+        path.write_text(json.dumps(payload))
+
+        loaded = load_run_record(path)
+        assert loaded.result.config_hash == rec.result.config_hash
+        assert not hasattr(loaded, "hostname")
 
     def test_make_preserves_spec_and_result(self):
         result = _run()
         rec = RunRecord.make(_SPEC, result)
         assert rec.spec == _SPEC
+        assert rec.resolved_spec == result.resolved_spec
         assert rec.result.status == "completed"
         assert rec.result.config_hash == result.config_hash
 
@@ -80,18 +136,23 @@ class TestRunRecord:
         save_run_record(rec, path)
         loaded = load_run_record(path)
         assert loaded.spec == rec.spec
+        assert loaded.resolved_spec == rec.resolved_spec
         assert loaded.result.config_hash == rec.result.config_hash
         assert loaded.timestamp == rec.timestamp
-        assert loaded.hostname == rec.hostname
+        assert loaded.git_hash == rec.git_hash
 
     def test_load_legacy_format(self, tmp_path):
         """Files saved by the old CLI (no metadata fields) must load without error."""
         result = _run()
-        legacy = {"spec": _SPEC.model_dump(), "result": result.model_dump()}
+        legacy_result = result.model_dump()
+        legacy_result.pop("resolved_spec")
+        legacy_result.pop("frozen_config_hash")
+        legacy = {"spec": _SPEC.model_dump(), "result": legacy_result}
         path = tmp_path / "legacy.json"
         path.write_text(json.dumps(legacy, default=str))
         loaded = load_run_record(path)
         assert loaded.spec == _SPEC
+        assert loaded.resolved_spec == _SPEC
         assert loaded.timestamp == ""  # default value
 
     def test_save_creates_parent_dirs(self, tmp_path):
@@ -119,8 +180,44 @@ class TestRunRecord:
         save_run_record(rec, path)
         parsed = json.loads(path.read_text())
         assert "spec" in parsed
+        assert "resolved_spec" in parsed
         assert "result" in parsed
         assert "timestamp" in parsed
+
+    def test_hpo_record_keeps_atomic_frozen_resolved_pair(self):
+        spec = _SPEC.model_copy(
+            deep=True,
+            update={
+                "protocol": _SPEC.protocol.model_copy(
+                    update={"use_hpo": True, "hpo_budget": 3}
+                )
+            },
+        )
+        result = run_pipeline(_DATA, spec)
+
+        rec = RunRecord.make(spec, result)
+
+        assert rec.spec == spec
+        assert rec.resolved_spec == result.resolved_spec
+        assert rec.spec.config_hash() == result.frozen_config_hash
+        assert rec.resolved_spec.config_hash() == result.config_hash
+        assert rec.spec != rec.resolved_spec
+
+
+class TestEnergyContract:
+    def test_pipeline_reports_energy_unavailable(self):
+        result = _run()
+
+        assert result.energy == EnergyResult()
+        assert result.energy.model_dump() == {
+            "status": "unavailable",
+            "reason": "No supported hardware energy counter available",
+            "backend": None,
+        }
+
+    def test_energy_contract_rejects_claimed_backend(self):
+        with pytest.raises(ValueError):
+            EnergyResult(backend="tdp-estimate")
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +320,24 @@ class TestGenerateReport:
         assert rows[0]["nrmse_range"] not in ("", "-", "None")
 
 
+class TestBaselineReporting:
+    def test_report_includes_baseline_without_crashing(self, tmp_path):
+        rec = _make_baseline_record("persistence")
+        generate_report([rec], tmp_path)
+        assert rec.result.model_family == "baseline"
+        assert "persistence" in (tmp_path / "report.csv").read_text()
+        assert "persistence" in (tmp_path / "report.md").read_text()
+
+    def test_plot_metric_bar_accepts_baseline(self, tmp_path):
+        from rc_bench.reporting.plots import plot_metric_bar
+
+        rec = _make_baseline_record("ridge_ar")
+        out = tmp_path / "bar.png"
+        plot_metric_bar([rec], metric="nrmse_range", output_path=out)
+        assert out.exists()
+        assert out.stat().st_size > 0
+
+
 # ---------------------------------------------------------------------------
 # TestPlots
 # ---------------------------------------------------------------------------
@@ -276,34 +391,85 @@ class TestPipelineArtifacts:
         result = run_pipeline(_DATA, _SPEC)
         assert result.artifact_paths == {}
 
+    def test_artifact_dir_alone_does_not_enable_predictions(self, tmp_path):
+        art_dir = tmp_path / "artifacts"
+        result = run_pipeline(_DATA, _SPEC, artifact_dir=art_dir)
+        assert result.artifact_paths == {}
+        assert not art_dir.exists()
+
     def test_predictions_npz_saved(self, tmp_path):
-        result = run_pipeline(_DATA, _SPEC, artifact_dir=tmp_path)
+        result = run_pipeline(
+            _DATA,
+            _SPEC,
+            artifact_dir=tmp_path,
+            save_predictions=True,
+        )
         assert "predictions" in result.artifact_paths
         npz_path = Path(result.artifact_paths["predictions"])
         assert npz_path.exists()
         arrays = np.load(npz_path)
         assert "y_test" in arrays
         assert "y_pred" in arrays
+        assert arrays["seed"].item() == _SPEC.seed
         assert len(arrays["y_test"]) == len(arrays["y_pred"])
 
     def test_artifact_dir_created_if_missing(self, tmp_path):
         art_dir = tmp_path / "nested" / "artifacts"
-        result = run_pipeline(_DATA, _SPEC, artifact_dir=art_dir)
+        result = run_pipeline(
+            _DATA,
+            _SPEC,
+            artifact_dir=art_dir,
+            save_predictions=True,
+        )
         assert art_dir.exists()
         assert "predictions" in result.artifact_paths
 
     def test_artifact_path_contains_config_hash(self, tmp_path):
-        result = run_pipeline(_DATA, _SPEC, artifact_dir=tmp_path)
+        result = run_pipeline(
+            _DATA,
+            _SPEC,
+            artifact_dir=tmp_path,
+            save_predictions=True,
+        )
         npz_name = Path(result.artifact_paths["predictions"]).name
         assert _SPEC.config_hash() in npz_name
 
-    def test_multi_seed_no_predictions_artifact(self, tmp_path):
+    def test_predictions_opt_in_requires_artifact_dir(self):
+        with pytest.raises(ValueError, match="artifact_dir"):
+            run_pipeline(_DATA, _SPEC, save_predictions=True)
+
+    def test_multi_seed_artifact_dir_alone_does_not_save_predictions(self, tmp_path):
         spec = _SPEC.model_copy(
             deep=True,
             update={"protocol": ProtocolSpec(washout=20, train_frac=0.6, val_frac=0.2, n_seeds=2)},
         )
-        result = run_pipeline(_DATA, spec, artifact_dir=tmp_path)
+        art_dir = tmp_path / "artifacts"
+        result = run_pipeline(_DATA, spec, artifact_dir=art_dir)
         assert "predictions" not in result.artifact_paths
+        assert not art_dir.exists()
+
+    def test_multi_seed_opt_in_saves_one_representative_seed(self, tmp_path):
+        spec = _SPEC.model_copy(
+            deep=True,
+            update={"protocol": ProtocolSpec(washout=20, train_frac=0.6, val_frac=0.2, n_seeds=3)},
+        )
+        result = run_pipeline(
+            _DATA,
+            spec,
+            artifact_dir=tmp_path,
+            save_predictions=True,
+        )
+
+        assert result.multi_seed_result is not None
+        assert result.multi_seed_result.n_seeds == 3
+        assert "predictions" in result.artifact_paths
+        assert len(list(tmp_path.glob("*.npz"))) == 1
+
+        npz_path = Path(result.artifact_paths["predictions"])
+        assert f"seed{spec.seed}" in npz_path.name
+        arrays = np.load(npz_path)
+        assert arrays["seed"].item() == spec.seed
+        assert len(arrays["y_test"]) == len(arrays["y_pred"])
 
 
 # ---------------------------------------------------------------------------
@@ -366,7 +532,6 @@ class TestCLIReport:
         loaded = load_run_record(out_file)
         assert loaded.result.status == "completed"
         assert loaded.timestamp != ""
-        assert loaded.hostname != ""
 
     def test_run_cmd_artifacts_flag(self, tmp_path):
         from typer.testing import CliRunner

@@ -40,7 +40,7 @@ def _load_all():
     for path in sorted(RUNS_DIR.glob("*.json")):
         try:
             rec = load_run_record(path)
-            model = rec.spec.reservoir.type
+            model = rec.spec.model_type
             task = rec.spec.dataset.name
             records.append((rec, model, task))
         except Exception as exc:

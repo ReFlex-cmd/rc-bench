@@ -60,6 +60,11 @@ def _print_result(result_spec) -> None:
         for field in ("rmse", "nrmse_range", "nrmse_std", "nrmse_var",
                       "mae", "mse", "val_nrmse_range"):
             t.add_row(field, f"{getattr(m, field):.6f} ± {getattr(s, field):.6f}")
+        # Baseline-relative metrics only exist when a seasonal period was given
+        # (DEC-013); a row of dashes would read as "measured, and it is nothing".
+        for field in ("mase", "mae_skill"):
+            if getattr(m, field, None) is not None:
+                t.add_row(field, f"{getattr(m, field):.6f} ± {getattr(s, field):.6f}")
         t.add_row("prediction_horizon",
                   f"{m.prediction_horizon:.1f} ± {s.prediction_horizon:.1f}")
         t.add_row("train_time (s)",
@@ -77,6 +82,10 @@ def _print_result(result_spec) -> None:
         t.add_row("nrmse_var",          f"{metrics.nrmse_var:.6f}")
         t.add_row("mae",                f"{metrics.mae:.6f}")
         t.add_row("mse",                f"{metrics.mse:.6f}")
+        if metrics.mase is not None:
+            t.add_row("mase",           f"{metrics.mase:.6f}")
+        if metrics.mae_skill is not None:
+            t.add_row("mae_skill",      f"{metrics.mae_skill:.6f}")
         t.add_row("prediction_horizon", str(metrics.prediction_horizon))
         t.add_row("val_nrmse_range",    f"{metrics.val_nrmse_range:.6f}")
         t.add_row("train_time (s)",     f"{metrics.train_time:.4f}")
@@ -218,9 +227,16 @@ def run_cmd(
         data = get_data_for_experiment(
             dataset_name=spec.dataset.name,
             length=spec.dataset.length,
+            train_frac=spec.protocol.train_frac,
+            val_frac=spec.protocol.val_frac,
             seed=spec.dataset.seed,
         )
-        result_spec = run_pipeline(data, spec, artifact_dir=artifacts)
+        result_spec = run_pipeline(
+            data,
+            spec,
+            artifact_dir=artifacts,
+            save_predictions=artifacts is not None,
+        )
     except Exception as exc:
         console.print(f"[red]Run failed:[/red] {exc}")
         raise typer.Exit(1)
@@ -376,6 +392,81 @@ def report_cmd(
             console.print(f"[green]{bar_path.name}[/green] → {bar_path}")
         except Exception as exc:
             console.print(f"[yellow]Plot skipped:[/yellow] {exc}")
+
+
+# ---------------------------------------------------------------------------
+# eda
+# ---------------------------------------------------------------------------
+
+@app.command("eda")
+def eda_cmd(
+    raw_path: Path = typer.Argument(
+        ...,
+        help="Verified UCI household_power_consumption.txt path.",
+    ),
+    manifest: Path = typer.Option(
+        Path("configs/jmlc/dataset_manifest.json"),
+        "--manifest",
+        help="Pinned dataset manifest used for local size/SHA-256 verification.",
+    ),
+    output_dir: Path = typer.Option(
+        Path("reports/jmlc_2026"),
+        "--output-dir",
+        help="Evidence root for the fixed EDA Markdown, JSON and plot files.",
+    ),
+) -> None:
+    """Generate deterministic observed-only EDA for the pinned 12k window."""
+    from rc_bench.data.download import (
+        DatasetDownloadError,
+        DatasetManifest,
+        download_dataset,
+    )
+    from rc_bench.data.jmlc import (
+        JMLCDataError,
+        load_uci_household_power_series,
+    )
+    from rc_bench.reporting.eda import (
+        EDAInvariantError,
+        generate_eda_report,
+    )
+
+    if not raw_path.is_file():
+        console.print(f"[red]Raw data file not found:[/red] {raw_path}")
+        raise typer.Exit(1)
+
+    try:
+        pinned = DatasetManifest.load(manifest)
+        if raw_path.name != pinned.raw_filename:
+            raise ValueError(
+                f"raw filename {raw_path.name!r} does not match manifest "
+                f"filename {pinned.raw_filename!r}"
+            )
+
+        verified_path = download_dataset(manifest, raw_path.parent)
+        if verified_path.resolve() != raw_path.resolve():
+            raise ValueError(
+                "verified manifest path does not match the requested raw path"
+            )
+
+        series = load_uci_household_power_series(verified_path)
+        paths = generate_eda_report(
+            series,
+            output_dir,
+            raw_sha256=pinned.raw_sha256,
+        )
+    except (
+        DatasetDownloadError,
+        EDAInvariantError,
+        JMLCDataError,
+        OSError,
+        ValueError,
+    ) as exc:
+        console.print(f"[red]EDA failed:[/red] {exc}")
+        raise typer.Exit(1)
+
+    console.print("[green]EDA complete[/green]")
+    for path in paths:
+        console.print(f"  {path.relative_to(output_dir).as_posix()}")
 
 
 # ---------------------------------------------------------------------------

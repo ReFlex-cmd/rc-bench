@@ -1,0 +1,32 @@
+# JMLC fair-matrix config (DEC-002 / DEC-004 / DEC-013 / DEC-014).
+#
+# Same template contract as smoke.yaml — a single VALID ExperimentSpec that
+# scripts/run_jmlc_matrix.py expands into the canonical 14-cell matrix (7 models
+# x horizons 1 and 24). The only differences from smoke.yaml are the evaluation
+# budgets, which are the ones the defence reports:
+#   reservoirs: 20 HPO trials (DEC-004: equal budget for every reservoir model),
+#               best config then evaluated on 5 seeds;
+#   baselines : deterministic, run once (no seeds, no HPO).
+dataset:
+  name: uci_household_power
+  length: 12000
+  # Pinned to configs/jmlc/dataset_manifest.json raw_file.sha256; run_matrix
+  # hashes the raw file before running and refuses to continue on a mismatch.
+  raw_sha256: 4259c9d7ece5dbee9ab8d53682baac68d791c864f0f64a52b4043cb3b90894b7
+reservoir:
+  type: esn
+  params: {}
+protocol:
+  washout: 200
+  train_frac: 0.6
+  val_frac: 0.2
+  forecasting_mode: fixed_horizon
+  horizon: 1
+  use_hpo: true
+  hpo_budget: 20
+  n_seeds: 5
+  selection_metric: nrmse_std
+  seasonal_period: 24
+readout:
+  alpha_grid: [0.001, 0.01, 0.1, 1.0, 10.0]
+seed: 42

@@ -2,9 +2,13 @@
 
 Per ТЗ §3 / Wringe et al. 2024 criterion 6 ("полное логирование"):
 - ``git_hash`` — short HEAD commit (subprocess git rev-parse).
-- ``hostname``, ``python_version``, ``rc_bench_version`` — identification.
+- ``python_version``, ``rc_bench_version`` — identification.
 - ``lib_versions`` — versions of all major scientific dependencies.
 - ``hardware_profile`` — CPU model, core counts, total RAM.
+
+DEC-008: raw RunRecords are themselves published evidence, so no machine
+identity is recorded — no hostname, username or absolute path. Records written
+before this rule still load; the extra field is ignored.
 """
 
 from __future__ import annotations
@@ -12,14 +16,13 @@ from __future__ import annotations
 import json
 import os
 import platform
-import socket
 import subprocess
 from datetime import datetime, timezone
 from importlib import metadata as _md
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from rc_bench.core.schema import ExperimentSpec, ResultSpec
 
@@ -104,26 +107,65 @@ def _hardware_profile() -> Dict[str, Any]:
 
 
 class RunRecord(BaseModel):
+    # ``spec`` is the immutable user-provided (frozen) specification.
     spec: ExperimentSpec
+    # ``resolved_spec`` is the configuration actually evaluated after HPO.
+    # A before-validator fills it for legacy records that only contain spec.
+    resolved_spec: ExperimentSpec
     result: ResultSpec
     # All metadata fields default to "" / None for backward-compat with legacy JSON files
     # that only contain {"spec": ..., "result": ...}.
     timestamp: str = Field(default="")
     git_hash: Optional[str] = None
-    hostname: str = Field(default="")
     python_version: str = Field(default="")
     rc_bench_version: str = Field(default="0.1.0")
     lib_versions: Dict[str, str] = Field(default_factory=dict)
     hardware_profile: Dict[str, Any] = Field(default_factory=dict)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _fill_legacy_resolved_spec(cls, data: Any) -> Any:
+        if not isinstance(data, dict) or data.get("resolved_spec") is not None:
+            return data
+
+        result = data.get("result")
+        if isinstance(result, ResultSpec):
+            resolved_spec = result.resolved_spec
+        elif isinstance(result, dict):
+            resolved_spec = result.get("resolved_spec")
+        else:
+            resolved_spec = None
+
+        migrated = dict(data)
+        migrated["resolved_spec"] = resolved_spec or data.get("spec")
+        return migrated
+
     @classmethod
     def make(cls, spec: ExperimentSpec, result: ResultSpec) -> "RunRecord":
+        frozen_spec = spec.model_copy(deep=True)
+        resolved_spec = (
+            result.resolved_spec.model_copy(deep=True)
+            if result.resolved_spec is not None
+            else frozen_spec.model_copy(deep=True)
+        )
+
+        if (
+            result.frozen_config_hash is not None
+            and result.frozen_config_hash != frozen_spec.config_hash()
+        ):
+            raise ValueError("ResultSpec frozen_config_hash does not match frozen spec")
+        if (
+            result.status == "completed"
+            and result.config_hash != resolved_spec.config_hash()
+        ):
+            raise ValueError("ResultSpec config_hash does not match resolved spec")
+
         return cls(
-            spec=spec,
+            spec=frozen_spec,
+            resolved_spec=resolved_spec,
             result=result,
             timestamp=datetime.now(timezone.utc).isoformat(),
             git_hash=_git_hash(),
-            hostname=socket.gethostname(),
             python_version=platform.python_version(),
             rc_bench_version=_rc_bench_version(),
             lib_versions=_lib_versions(),

@@ -26,7 +26,10 @@ from pydantic import BaseModel, Field
 
 from rc_bench.core.schema import ExperimentSpec, ReadoutSpec
 from rc_bench.hpo.search_spaces import params_from_trial, suggest_params
-from rc_bench.runners.experiment_runner import run_experiment
+from rc_bench.runners.experiment_runner import (
+    ExperimentDataError,
+    evaluate_train_validation,
+)
 from rc_bench.core.reservoirs.registry import get_reservoir
 
 # Silence Optuna's own logging; rc-bench uses warnings/print for UX
@@ -147,7 +150,10 @@ def _objective(
     )
 
     try:
-        result = run_experiment(data, trial_spec, reservoir)
+        result = evaluate_train_validation(data, trial_spec, reservoir)
+    except ExperimentDataError:
+        # Broken data/mask contracts cannot be repaired by another trial.
+        raise
     except Exception as exc:
         # Bad hyperparameter combination — report a large score and prune
         logger.debug("Trial %d failed: %s", trial.number, exc)
@@ -163,7 +169,9 @@ def _objective(
                      trial.number, states_std)
         raise optuna.TrialPruned()
 
-    val_score = float(result["metrics"].val_nrmse_range)
+    # Minimise the configured selection metric (NRMSE_range legacy default,
+    # NRMSE_std for JMLC per DEC-013); falls back to range for older results.
+    val_score = float(result.get("val_score", result["val_nrmse_range"]))
 
     # Report intermediate value so MedianPruner can act on subsequent trials
     trial.report(val_score, step=0)

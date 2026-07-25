@@ -1,0 +1,141 @@
+# Decision Log
+
+Новые записи добавляются в конец. Старые решения не переписываются: изменение оформляется новой записью со ссылкой на заменённое решение.
+
+## DEC-001 — Рабочая ветка
+
+Дата: 24.07.2026. Статус: accepted.
+
+Рабочая база — `dev`; `main` изменяется одним итоговым PR. Исторический `dev` сохраняется в архивной ветке до синхронизации с `main`.
+
+## DEC-002 — Сокращённая real-data матрица
+
+Дата: 24.07.2026. Статус: accepted.
+
+На реальном датасете сравниваются persistence, seasonal persistence, Ridge AR, ESN, Leaky ESN, LSM и Logistic на горизонтах 1 и 24. Deep ESN, FHN и QRC остаются в синтетическом контуре.
+
+Причина: законченный и проверяемый эксперимент важнее широкой, но незавершённой матрицы.
+
+## DEC-003 — Реальный датасет
+
+Дата: 24.07.2026. Статус: accepted.
+
+Используется UCI Individual Household Electric Power Consumption, `Global_active_power`, почасовая частота и детерминированное окно 12 000 часов.
+
+## DEC-004 — Fair HPO
+
+Дата: 24.07.2026. Статус: accepted.
+
+Smoke использует 1 seed и 2 trials. Основной прогон использует 20 trials на каждую reservoir-модель и горизонт, затем фиксированный resolved spec оценивается на seed `42-46`. Если машинного времени недостаточно, бюджет одинаково уменьшается до 10 trials.
+
+## DEC-005 — Headline и baseline metrics
+
+Дата: 24.07.2026. Статус: accepted.
+
+Headline — `NRMSE_std`. Рядом публикуются MAE, RMSE, seasonal MASE и MAE skill относительно seasonal persistence.
+
+## DEC-006 — Пропуски и ресемплинг
+
+Дата: 24.07.2026. Статус: accepted.
+
+Час считается наблюдаемым при минимум 30 валидных минутных значениях. Входной ряд заполняется forward fill без будущих данных. Восстановленные targets исключаются из обучения readout и основных val/test метрик.
+
+## DEC-007 — Energy
+
+Дата: 24.07.2026. Статус: accepted.
+
+Полноценные energy measurements исключены: совместимого аппаратного счётчика нет. Поле energy сохраняется со статусом `unavailable`. TDP и время CPU не используются как оценка энергии. Activity proxies допускаются только как отдельный P1-блок.
+
+## DEC-008 — Публикация артефактов
+
+Дата: 24.07.2026. Статус: accepted.
+
+Публикуются dataset manifest, frozen/resolved specs, HPO diagnostics, сырые RunRecord, агрегаты, hardware profile и итоговые графики. Исходный датасет не публикуется. Hostname, username и абсолютные пути удаляются.
+
+## DEC-009 — Приоритет перед защитой
+
+Дата: 24.07.2026. Статус: accepted.
+
+P0: correctness, real data, EDA, baselines, fair protocol, latency/memory, evidence, CI и demo. P1: operation count, sparsity, LSM events. P2: API hardening, energy backend и расширение матрицы.
+
+## DEC-010 — Frozen и resolved спецификации
+
+Дата: 24.07.2026. Статус: accepted.
+
+`ResultSpec.config_hash` всегда относится к фактически оценённому resolved spec. `ResultSpec` дополнительно сохраняет `frozen_config_hash` и `resolved_spec`, а `RunRecord` хранит исходный `spec` как frozen и отдельный `resolved_spec`. Старые RunRecord без `resolved_spec` загружаются совместимо, используя исходный `spec` в обеих ролях.
+
+## DEC-011 — Фиксация UCI-источника
+
+Дата: 24.07.2026. Статус: accepted.
+
+Канонический manifest версии 1 хранится в `configs/jmlc/dataset_manifest.json` и фиксирует официальный UCI URL, размер и SHA-256 архива и извлечённого файла. Поскольку UCI не публикует подписанный SHA-256, закреплённый архив дополнительно сверяется с официальным legacy endpoint. Изменение байтов upstream считается ошибкой и требует отдельного проверяемого обновления manifest.
+
+## DEC-012 — Выравнивание горизонта на границах split
+
+Дата: 24.07.2026. Статус: accepted.
+
+Сначала фиксируются непересекающиеся хронологические блоки 60/20/20, затем внутри каждого блока строятся пары `X[:-h] → y[h:]`. Контекст из предыдущего блока не переносится в validation или test. Одинаковая семантика применяется к reservoir-моделям и baseline, чтобы ни одна группа не получала дополнительные первые `h` targets на границе split.
+
+## DEC-013 — Общий JMLC evaluation protocol
+
+Дата: 24.07.2026. Статус: accepted.
+
+Для всех 14 real-data cells используется `fixed_horizon`, в том числе при горизонте 1; `one_step` с unshifted UCI-рядом запрещён как target leakage. Общий per-split warmup равен 200 часам, поэтому оцениваемые target indices для горизонта `h` начинаются с `200 + h`. Persistence, seasonal persistence, Ridge AR и reservoir-модели обязаны использовать один и тот же набор наблюдаемых target timestamps.
+
+Ridge baseline фиксируется как AR(24) с train-only z-score входных lag-признаков, нескалированным target, intercept и общей для обоих горизонтов alpha-grid `[0.001, 0.01, 0.1, 1.0, 10.0]`. Validation selection для Ridge и reservoir HPO выполняется по `NRMSE_std`; legacy synthetic runs сохраняют прежний default `NRMSE_range`.
+
+MASE использует train-only seasonal scale с лагом 24, а MAE skill — seasonal persistence на точно том же test target set. Маска применяется к текущему target; causally forward-filled прошлое значение допустимо как input. Пустой набор или нулевой denominator считается явной ошибкой протокола, а не публикуемым `NaN`/`Infinity`.
+
+## DEC-014 — Явное представление baseline
+
+Дата: 24.07.2026. Статус: accepted.
+
+Persistence, seasonal persistence и Ridge AR представляются отдельным `BaselineSpec`, а не типами reservoir registry. Они дают deterministic single-result, не проходят через multi-seed и не получают фиктивный seed. Persistence-модели имеют selection `none`; Ridge AR сохраняет `fixed_grid` selection отдельно от Optuna HPO. Расширение схемы аддитивно: старые reservoir specs и RunRecord продолжают загружаться, а новые результаты явно сохраняют model family, deterministic status, реально оценённые seeds и selection metadata.
+
+## DEC-015 — Ridge AR: обучение и селекция
+
+Дата: 24.07.2026. Статус: accepted. Уточняет DEC-013/DEC-014.
+
+Ridge AR(24) реализуется через `sklearn.linear_model.Ridge` с `fit_intercept=True` и нескалированным target. Входные lag-признаки z-score-нормализуются `StandardScaler`, обученным **только на train** (train-only scaler), и этот scaler применяется к val/test без переобучения.
+
+Alpha выбирается по единой сетке `[0.001, 0.01, 0.1, 1.0, 10.0]`: для каждого alpha Ridge обучается на train и оценивается на validation по `NRMSE_std`; выбирается alpha с минимальным validation `NRMSE_std` (при равенстве — первый по сетке). После выбора модель **переобучается на train+val** с зафиксированным alpha и один раз оценивается на test.
+
+Причина train+val для финального fit: reservoir-модели тоже обучают финальный readout на train+val после HPO (см. `run_experiment`), поэтому одинаковый бюджет данных для финальной модели сохраняет честность сравнения. Train-only scaler и test-only финальная оценка исключают утечку. Пустой alpha-grid или полностью не-конечный validation-скор считаются явной ошибкой протокола.
+
+## DEC-016 — RunRecord не содержит machine identity
+
+Дата: 25.07.2026. Статус: accepted. Уточняет DEC-008.
+
+Сырые RunRecord публикуются, поэтому `hostname` удалён из самой модели `RunRecord`, а не вычищается при сборке bundle: поле, которое обязательно санитизировать позже, рано или поздно утечёт в артефакт. Записи, созданные до этого решения, продолжают загружаться — лишнее поле игнорируется. `verify.sh release` дополнительно грепает bundle на `"hostname":`, абсолютные пути и username.
+
+Публикуемые идентификаторы ограничены: git hash, timestamp, версии Python и библиотек, обезличенный hardware profile (модель CPU, число ядер, RAM, платформа).
+
+## DEC-017 — Pinned raw digest проверяется на реальных байтах
+
+Дата: 25.07.2026. Статус: accepted. Уточняет DEC-003/DEC-008.
+
+`dataset.raw_sha256` пинуется в matrix-конфиге (`configs/jmlc/*.yaml`) из `raw_file.sha256` манифеста и попадает в frozen и resolved spec каждой cell, поэтому любой RunRecord прослеживается до конкретных сырых байт. `run_matrix` перед прогоном хеширует тот файл, который реально прочитает loader (с учётом `RC_BENCH_UCI_RAW_PATH`), и отказывается считать матрицу при несовпадении.
+
+Причина: незаверенный digest в spec — это заявление, а не доказательство; проверка стоит менее секунды на прогон матрицы. Тест `test_matrix_config_pins_the_manifest_raw_sha256` не даёт конфигу и манифесту разойтись.
+
+## DEC-018 — EvaluationContext обязателен для обоих семейств
+
+Дата: 25.07.2026. Статус: accepted. Уточняет DEC-013.
+
+Reservoir-результаты записывают тот же `EvaluationContext`, что и baseline (`target_start_index`, `n_test_targets`, `seasonal_period`, `mase_scale`, `seasonal_test_mae`, `n_mase_scale_terms`), в том числе на multi-seed пути (контекст определяется данными и протоколом, поэтому берётся с первого seed). Читатель evidence-bundle обязан проверять общий target set и общий MASE scale по самим RunRecord, не перезагружая predictions.
+
+## DEC-019 — Latency публикуется в deployable-виде
+
+Дата: 25.07.2026. Статус: accepted. Уточняет PROF-001.
+
+Каждая ячейка профиля содержит два измерения одного шага вывода: `latency` — как шаг реализован в библиотеке (через `sklearn.predict` / `StandardScaler.transform`), и `latency_deployable` — та же модель и те же коэффициенты, но readout вычисляется арифметически (`coef @ h + intercept`). Предсказания обоих путей обязаны совпадать с `rtol=1e-9`; это проверяется тестом, иначе быстрый путь считал бы другую модель.
+
+Причина: per-call валидация входа в sklearn стоит 32–42 мкс независимо от размера модели и составляла 55–96 % измеренного времени. В as-implemented виде Ridge AR (87.4 мкс) оказывался «медленнее» ESN (73.1 мкс), хотя в deployable-виде он в 6.5 раза быстрее (3.37 против 21.82 мкс) — то есть публиковалось бы ранжирование по числу вызовов фреймворка, а не по стоимости моделей.
+
+В таблицах, на Pareto-графиках и в выводах используется deployable-измерение. As-implemented остаётся в артефактах как честная характеристика текущей реализации. Обе величины — CPU одной машины и Python-реализация; нативная реализация была бы быстрее, вероятно неодинаково для разных семейств.
+
+## DEC-020 — Peak RSS — footprint процесса, не модели
+
+Дата: 25.07.2026. Статус: accepted. Уточняет PROF-002.
+
+`measure_peak_rss_subprocess` порождает дочерний процесс через `fork`, поэтому его peak RSS наследует резидентную память родителя (интерпретатор, numpy/sklearn/reservoirpy, загруженный датасет): 87–244 МБ во всех ячейках, а `peak_rss_delta_bytes` для лёгких моделей отрицателен. Величина публикуется с явной пометкой «footprint процесса, верхняя граница», а edge-релевантными числами считаются `working_state_bytes` и `serialized_model_bytes`; Pareto-график по памяти строится по `working_state_bytes`.

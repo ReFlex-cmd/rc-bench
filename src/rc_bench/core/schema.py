@@ -3,17 +3,36 @@ import json
 from typing import Any, Callable, Dict, List, Literal, Optional
 
 import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class DatasetSpec(BaseModel):
     name: str
     length: int = 2000
     seed: int = 42
+    raw_sha256: Optional[str] = None
+
+    @field_validator("raw_sha256")
+    @classmethod
+    def _validate_raw_sha256(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.lower()
+        if len(normalized) != 64 or any(
+            character not in "0123456789abcdef"
+            for character in normalized
+        ):
+            raise ValueError("raw_sha256 must be a 64-character hexadecimal digest")
+        return normalized
 
 
 class ReservoirSpec(BaseModel):
     type: Literal["esn", "lsm", "fhn", "logistic", "leaky_esn", "deep_esn", "qrc"]
+    params: Dict[str, Any] = Field(default_factory=dict)
+
+
+class BaselineSpec(BaseModel):
+    type: Literal["persistence", "seasonal_persistence", "ridge_ar"]
     params: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -29,6 +48,11 @@ class ProtocolSpec(BaseModel):
     hpo_budget: int = 100
     # Stage 8: multi-seed. Per ТЗ §3: target 10, minimum 5.
     n_seeds: int = 10
+    # JMLC uses the headline metric for selection; the legacy default remains
+    # range-normalized NRMSE so existing synthetic specs keep their semantics.
+    selection_metric: Literal["nrmse_range", "nrmse_std"] = "nrmse_range"
+    # Enables train-only MASE and test seasonal-skill accounting when present.
+    seasonal_period: Optional[int] = None
 
 
 class ReadoutSpec(BaseModel):
@@ -40,13 +64,64 @@ class ReadoutSpec(BaseModel):
 
 class ExperimentSpec(BaseModel):
     dataset: DatasetSpec
-    reservoir: ReservoirSpec
+    reservoir: Optional[ReservoirSpec] = None
+    baseline: Optional[BaselineSpec] = None
     protocol: ProtocolSpec = Field(default_factory=ProtocolSpec)
     readout: ReadoutSpec = Field(default_factory=ReadoutSpec)
-    seed: int = 42
+    seed: Optional[int] = 42
+
+    @model_validator(mode="after")
+    def _validate_model_family(self) -> "ExperimentSpec":
+        if (self.reservoir is None) == (self.baseline is None):
+            raise ValueError(
+                "experiment must define exactly one of reservoir or baseline"
+            )
+
+        if self.baseline is not None:
+            if self.seed is not None:
+                raise ValueError("baseline experiments require seed=None")
+            if self.protocol.n_seeds != 0:
+                raise ValueError("baseline experiments require protocol.n_seeds=0")
+            if self.protocol.use_hpo:
+                raise ValueError("baseline experiments cannot use Optuna HPO")
+        else:
+            if self.seed is None:
+                raise ValueError("reservoir experiments require a seed")
+            if self.protocol.n_seeds < 1:
+                raise ValueError(
+                    "reservoir experiments require protocol.n_seeds >= 1"
+                )
+        return self
+
+    @property
+    def model_family(self) -> Literal["reservoir", "baseline"]:
+        return "baseline" if self.baseline is not None else "reservoir"
+
+    @property
+    def model_type(self) -> str:
+        if self.baseline is not None:
+            return self.baseline.type
+        assert self.reservoir is not None
+        return self.reservoir.type
 
     def config_hash(self) -> str:
-        raw = json.dumps(self.model_dump(), sort_keys=True, default=str)
+        payload = self.model_dump()
+        if payload.get("reservoir") is None:
+            payload.pop("reservoir", None)
+        if payload.get("baseline") is None:
+            payload.pop("baseline", None)
+
+        dataset = payload["dataset"]
+        if dataset.get("raw_sha256") is None:
+            dataset.pop("raw_sha256", None)
+
+        protocol = payload["protocol"]
+        if protocol.get("selection_metric") == "nrmse_range":
+            protocol.pop("selection_metric", None)
+        if protocol.get("seasonal_period") is None:
+            protocol.pop("seasonal_period", None)
+
+        raw = json.dumps(payload, sort_keys=True, default=str)
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
@@ -61,6 +136,10 @@ class MetricsResult(BaseModel):
     prediction_horizon: int
     # Validation
     val_nrmse_range: float
+    val_nrmse_std: Optional[float] = None
+    # JMLC baseline-relative accuracy. Optional for legacy/synthetic records.
+    mase: Optional[float] = None
+    mae_skill: Optional[float] = None
     # Cost
     train_time: float
     inference_latency: float
@@ -81,6 +160,9 @@ class MetricsSummary(BaseModel):
     mse: float
     prediction_horizon: float
     val_nrmse_range: float
+    val_nrmse_std: Optional[float] = None
+    mase: Optional[float] = None
+    mae_skill: Optional[float] = None
     train_time: float
     inference_latency: float
     peak_memory: float
@@ -92,10 +174,20 @@ class MetricsSummary(BaseModel):
         agg: Callable[[List[float]], float],
     ) -> "MetricsSummary":
         fields = cls.model_fields.keys()
-        return cls(**{
-            f: float(agg([getattr(m, f) for m in metrics]))
-            for f in fields
-        })
+        aggregated: Dict[str, Optional[float]] = {}
+        for field in fields:
+            values = [getattr(metric, field) for metric in metrics]
+            if all(value is None for value in values):
+                aggregated[field] = None
+                continue
+            if any(value is None for value in values):
+                raise ValueError(
+                    f"{field} has mixed missing and numeric values"
+                )
+            aggregated[field] = float(
+                agg([float(value) for value in values if value is not None])
+            )
+        return cls(**aggregated)
 
 
 class MultiSeedResult(BaseModel):
@@ -106,9 +198,43 @@ class MultiSeedResult(BaseModel):
     std: MetricsSummary
 
 
+class EnergyResult(BaseModel):
+    """Explicitly unavailable until a supported hardware counter exists."""
+
+    status: Literal["unavailable"] = "unavailable"
+    reason: str = "No supported hardware energy counter available"
+    backend: None = None
+
+
+class SelectionCandidate(BaseModel):
+    params: Dict[str, Any] = Field(default_factory=dict)
+    score: float
+
+
+class SelectionResult(BaseModel):
+    method: Literal["none", "fixed_grid", "optuna"]
+    metric: Optional[Literal["nrmse_range", "nrmse_std"]] = None
+    candidates: List[SelectionCandidate] = Field(default_factory=list)
+    selected_params: Dict[str, Any] = Field(default_factory=dict)
+
+
+class EvaluationContext(BaseModel):
+    target_start_index: Optional[int] = None
+    n_test_targets: Optional[int] = None
+    seasonal_period: Optional[int] = None
+    mase_scale: Optional[float] = None
+    seasonal_test_mae: Optional[float] = None
+    n_mase_scale_terms: Optional[int] = None
+
+
 class ResultSpec(BaseModel):
     status: Literal["completed", "failed"]
+    # ``config_hash`` always identifies the actually evaluated resolved spec.
     config_hash: str
+    # Kept alongside the resolved hash so HPO runs remain traceable to the
+    # immutable user input. Optional defaults preserve legacy/failed records.
+    frozen_config_hash: Optional[str] = None
+    resolved_spec: Optional[ExperimentSpec] = None
     metrics: Optional[MetricsResult] = None
     multi_seed_result: Optional[MultiSeedResult] = None
     hpo_best_params: Optional[Dict[str, Any]] = None
@@ -117,5 +243,13 @@ class ResultSpec(BaseModel):
     hpo_convergence: Optional[List[float]] = None
     # HPO accounting (n_completed/n_pruned/n_failed/best_trial_number) — see audit/03 §3.7.3.
     hpo_diagnostics: Optional[Dict[str, int]] = None
+    # Explicit execution identity for JMLC evidence. Optional defaults preserve
+    # compatibility with pre-JMLC ResultSpec JSON.
+    model_family: Optional[Literal["reservoir", "baseline"]] = None
+    deterministic: Optional[bool] = None
+    evaluated_seeds: Optional[List[int]] = None
+    selection: Optional[SelectionResult] = None
+    evaluation: Optional[EvaluationContext] = None
+    energy: EnergyResult = Field(default_factory=EnergyResult)
     artifact_paths: Dict[str, str] = Field(default_factory=dict)
     error: Optional[str] = None

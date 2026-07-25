@@ -15,6 +15,7 @@ from rc_bench.hpo.search_spaces import (
     SEARCH_SPACES, params_from_trial, suggest_params,
 )
 from rc_bench.hpo.tuner import apply_hpo_params, run_hpo
+from rc_bench.readout.ridge import select_alpha
 from rc_bench.runners.multi_seed import run_multi_seed
 from rc_bench.runners.pipeline import run_pipeline
 
@@ -96,6 +97,58 @@ class TestSearchSpaces:
 # ---------------------------------------------------------------------------
 
 class TestRunHPO:
+    def test_hpo_never_reads_test_partition(self):
+        class GuardedData(dict):
+            def __getitem__(self, key):
+                if str(key).endswith("_test"):
+                    raise AssertionError(f"HPO accessed forbidden key: {key}")
+                return super().__getitem__(key)
+
+            def get(self, key, default=None):
+                if str(key).endswith("_test"):
+                    raise AssertionError(f"HPO accessed forbidden key: {key}")
+                return super().get(key, default)
+
+        guarded_data = GuardedData(_DATA)
+
+        result = run_hpo(_BASE_SPEC, guarded_data, n_trials=3, seed=0)
+
+        assert np.isfinite(result.best_score)
+
+    def test_hpo_propagates_invalid_observed_target_mask(self):
+        masked_data = {
+            **_DATA,
+            "target_observed_mask_train": np.ones(
+                len(_DATA["y_train"]),
+                dtype=np.bool_,
+            ),
+            "target_observed_mask_val": np.zeros(
+                len(_DATA["y_val"]),
+                dtype=np.bool_,
+            ),
+        }
+
+        with pytest.raises(
+            ValueError,
+            match="val.*zero observed targets after washout/forecast alignment",
+        ):
+            run_hpo(_BASE_SPEC, masked_data, n_trials=1, seed=0)
+
+    def test_hpo_rejects_partial_train_validation_mask_group(self):
+        partial_data = {
+            **_DATA,
+            "target_observed_mask_train": np.ones(
+                len(_DATA["y_train"]),
+                dtype=np.bool_,
+            ),
+        }
+
+        with pytest.raises(
+            ValueError,
+            match="target observed masks must provide train and val together",
+        ):
+            run_hpo(_BASE_SPEC, partial_data, n_trials=1, seed=0)
+
     def test_returns_hpo_result(self):
         result = run_hpo(_BASE_SPEC, _DATA, n_trials=3, seed=0)
         assert isinstance(result.best_params, dict)
@@ -155,6 +208,37 @@ class TestRunHPO:
 # TestMetricsSummary
 # ---------------------------------------------------------------------------
 
+class TestSelectAlphaMetric:
+    @staticmethod
+    def _data():
+        rng = np.random.default_rng(3)
+        w = np.array([1.5, -2.0, 0.5])
+        H_train = rng.standard_normal((100, 3))
+        y_train = H_train @ w + 0.1 * rng.standard_normal(100)
+        H_val = rng.standard_normal((40, 3))
+        y_val = H_val @ w + 0.1 * rng.standard_normal(40)
+        return H_train, y_train, H_val, y_val
+
+    _ALPHAS = [0.001, 1.0, 1000.0]
+
+    def test_default_metric_is_nrmse_range(self):
+        info = select_alpha(*self._data(), self._ALPHAS)
+        assert info["selection_metric"] == "nrmse_range"
+        assert info["val_score"] == pytest.approx(info["val_nrmse"])
+        assert "val_nrmse_std" in info
+
+    def test_std_metric_reports_std_score_and_keeps_same_alpha(self):
+        data = self._data()
+        by_range = select_alpha(*data, self._ALPHAS, metric="nrmse_range")
+        by_std = select_alpha(*data, self._ALPHAS, metric="nrmse_std")
+        # For a fixed validation target set both NRMSEs equal RMSE / const, so
+        # the argmin (selected alpha) is identical; only the score units differ.
+        assert by_std["alpha"] == by_range["alpha"]
+        assert by_std["selection_metric"] == "nrmse_std"
+        assert by_std["val_score"] == pytest.approx(by_std["val_nrmse_std"])
+        assert by_std["val_nrmse"] == pytest.approx(by_range["val_nrmse"])
+
+
 def _make_metrics(nrmse_range: float, seed: int = 0) -> MetricsResult:
     return MetricsResult(
         rmse=nrmse_range * 2,
@@ -188,11 +272,19 @@ class TestMetricsSummary:
         summary = MetricsSummary.from_metrics_list([m1, m2], lambda xs: float(np.mean(xs)))
         assert summary.nrmse_range == pytest.approx(0.3)
 
-    def test_all_fields_float(self):
+    def test_required_fields_float_optional_jmlc_fields_none_when_absent(self):
+        # Per DEC-013/DEC-014 the JMLC metrics (val_nrmse_std/mase/mae_skill)
+        # are additive Optional fields: they aggregate to None when the source
+        # metrics omit them (legacy/synthetic records) and to a float otherwise.
         m = _make_metrics(0.3)
         summary = MetricsSummary.from_metrics_list([m], lambda xs: float(np.mean(xs)))
+        optional_jmlc_fields = {"val_nrmse_std", "mase", "mae_skill"}
         for field in MetricsSummary.model_fields:
-            assert isinstance(getattr(summary, field), float)
+            value = getattr(summary, field)
+            if field in optional_jmlc_fields:
+                assert value is None
+            else:
+                assert isinstance(value, float)
 
 
 # ---------------------------------------------------------------------------
@@ -268,6 +360,21 @@ class TestPipeline:
     def test_result_config_hash_matches_spec(self):
         spec = self._spec()
         result = run_pipeline(_DATA, spec)
-        # hash is from the spec after potential HPO updates; just check it's a string
-        assert isinstance(result.config_hash, str)
-        assert len(result.config_hash) == 16
+        assert result.frozen_config_hash == spec.config_hash()
+        assert result.resolved_spec == spec
+        assert result.config_hash == result.resolved_spec.config_hash()
+
+    def test_hpo_result_keeps_frozen_and_resolved_specs_distinct(self):
+        spec = self._spec(use_hpo=True, hpo_budget=3)
+        frozen_dump = spec.model_dump()
+
+        result = run_pipeline(_DATA, spec)
+
+        assert spec.model_dump() == frozen_dump
+        assert result.frozen_config_hash == spec.config_hash()
+        assert result.resolved_spec is not None
+        assert result.resolved_spec != spec
+        assert result.config_hash == result.resolved_spec.config_hash()
+        assert result.resolved_spec.readout.alpha_grid == [
+            result.hpo_best_params["readout_alpha"]
+        ]
