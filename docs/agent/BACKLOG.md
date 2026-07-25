@@ -23,8 +23,9 @@
 | PROF-002 | P0 | Isolated peak RSS, model bytes, state bytes | VSLICE-001 | 1.5 ч | DONE |
 | ENERGY-001 | P0 | Schema/status `unavailable`, без energy backend | COR-002 | 0.5 ч | DONE |
 | EXP-001 | P0 | Сгенерировать frozen smoke matrix 14 cells | BASE-002, MET-001, PROF-002 | 0.5 ч | DONE |
-| EXP-002 | P0 | Выполнить и проверить smoke matrix | EXP-001 | 1 ч + compute | READY |
-| EXP-003 | P0 | Выполнить fair matrix: 20 trials, 5 seeds | EXP-002 | 1 ч + compute | READY |
+| EXP-002 | P0 | Выполнить и проверить smoke matrix | EXP-001 | 1 ч + compute | DONE |
+| EXP-003 | P0 | Выполнить fair matrix: 20 trials, 5 seeds | EXP-002 | 1 ч + compute | IN_PROGRESS |
+| PROF-003 | P0 | Профилировочный проход: latency/RSS/размеры по cells | PROF-002, EXP-002 | 1.5 ч | IN_PROGRESS |
 | EVID-001 | P0 | Evidence bundle, aggregation, traceability | EXP-003 | 1.5 ч | READY |
 | PLOT-001 | P0 | Quality-latency и quality-memory Pareto plots | EVID-001 | 1 ч | READY |
 | DOC-001 | P0 | README, protocol, limitations, demo-config | EVID-001 | 1.5 ч | READY |

@@ -101,3 +101,25 @@ Ridge AR(24) реализуется через `sklearn.linear_model.Ridge` с `
 Alpha выбирается по единой сетке `[0.001, 0.01, 0.1, 1.0, 10.0]`: для каждого alpha Ridge обучается на train и оценивается на validation по `NRMSE_std`; выбирается alpha с минимальным validation `NRMSE_std` (при равенстве — первый по сетке). После выбора модель **переобучается на train+val** с зафиксированным alpha и один раз оценивается на test.
 
 Причина train+val для финального fit: reservoir-модели тоже обучают финальный readout на train+val после HPO (см. `run_experiment`), поэтому одинаковый бюджет данных для финальной модели сохраняет честность сравнения. Train-only scaler и test-only финальная оценка исключают утечку. Пустой alpha-grid или полностью не-конечный validation-скор считаются явной ошибкой протокола.
+
+## DEC-016 — RunRecord не содержит machine identity
+
+Дата: 25.07.2026. Статус: accepted. Уточняет DEC-008.
+
+Сырые RunRecord публикуются, поэтому `hostname` удалён из самой модели `RunRecord`, а не вычищается при сборке bundle: поле, которое обязательно санитизировать позже, рано или поздно утечёт в артефакт. Записи, созданные до этого решения, продолжают загружаться — лишнее поле игнорируется. `verify.sh release` дополнительно грепает bundle на `"hostname":`, абсолютные пути и username.
+
+Публикуемые идентификаторы ограничены: git hash, timestamp, версии Python и библиотек, обезличенный hardware profile (модель CPU, число ядер, RAM, платформа).
+
+## DEC-017 — Pinned raw digest проверяется на реальных байтах
+
+Дата: 25.07.2026. Статус: accepted. Уточняет DEC-003/DEC-008.
+
+`dataset.raw_sha256` пинуется в matrix-конфиге (`configs/jmlc/*.yaml`) из `raw_file.sha256` манифеста и попадает в frozen и resolved spec каждой cell, поэтому любой RunRecord прослеживается до конкретных сырых байт. `run_matrix` перед прогоном хеширует тот файл, который реально прочитает loader (с учётом `RC_BENCH_UCI_RAW_PATH`), и отказывается считать матрицу при несовпадении.
+
+Причина: незаверенный digest в spec — это заявление, а не доказательство; проверка стоит менее секунды на прогон матрицы. Тест `test_matrix_config_pins_the_manifest_raw_sha256` не даёт конфигу и манифесту разойтись.
+
+## DEC-018 — EvaluationContext обязателен для обоих семейств
+
+Дата: 25.07.2026. Статус: accepted. Уточняет DEC-013.
+
+Reservoir-результаты записывают тот же `EvaluationContext`, что и baseline (`target_start_index`, `n_test_targets`, `seasonal_period`, `mase_scale`, `seasonal_test_mae`, `n_mase_scale_terms`), в том числе на multi-seed пути (контекст определяется данными и протоколом, поэтому берётся с первого seed). Читатель evidence-bundle обязан проверять общий target set и общий MASE scale по самим RunRecord, не перезагружая predictions.
