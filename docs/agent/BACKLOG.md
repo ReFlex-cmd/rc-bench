@@ -39,6 +39,34 @@
 | API-001 | P2 | Полная проверка ownership в API | REL-001 | 2 ч | READY |
 | ENERGY-002 | P2 | RAPL/Jetson backend при появлении устройства | REL-001 | — | BLOCKED |
 
+## Блок соответствия описанию проекта (PDF)
+
+План: [`plans/2026-07-25-pdf-conformance.md`](plans/2026-07-25-pdf-conformance.md).
+Решения человека от 25 июля: доступ к RAPL открывается, best-effort реализуется,
+лицензия MIT, API чинится. Порядок исполнения — сверху вниз; Task N в таблице ниже
+соответствует номеру задачи в плане.
+
+| ID | P | Задача | Зависит от | Оценка | Статус |
+|---|---:|---|---|---:|---|
+| REPO-001 | P0 | Файл `LICENSE` (MIT) и тест обложки | — | 0.5 ч | READY (решение принято, разблокирована) |
+| PROXY-001 | P0 | Аналитический счёт операций и разреженность состояния | PROF-002 | 1.5 ч | READY |
+| PROXY-002 | P0 | Спайки и синаптические события LSM | PROXY-001 | 1 ч | READY |
+| ENERGY-002 | P0 | Backend Intel RAPL и протокол энергоизмерения | PROF-001 | 2 ч | READY (предусловие: доступ к `energy_uj`) |
+| ENERGY-003 | P0 | Energy и activity в схеме, профиле и Pareto | ENERGY-002, PROXY-002 | 2 ч | READY |
+| MODE-001 | P0 | Режим best-effort в спецификации и раннере матрицы | — | 1.5 ч | READY |
+| MODE-002 | P0 | Mode-aware evidence-гейт и раздельные агрегаты | MODE-001 | 1.5 ч | READY |
+| PROF-004 | P1 | Время обучения в опубликованной таблице | — | 0.5 ч | READY |
+| SELECT-001 | P0 | Выбор Pareto-оптимальной модели под ограничения устройства | ENERGY-003, PROF-004 | 2 ч | READY |
+| API-001 | P1 | Baseline-спеки и ownership в сервисном контуре | — | 2 ч | READY |
+| EXP-004 | P0 | Перепрогон бандла: fair + best_effort + energy + прокси | все выше | 1 ч + compute | READY |
+| DOC-003 | P0 | Разметка implemented/planned/unavailable, DEC-021…024, обложка репо | EXP-004 | 2 ч | READY |
+| REL-002 | P0 | Релизная ветка, PR `→ main`, разделение контуров | DOC-003 | 1 ч | READY |
+
+Ownership: cross-cutting шаги (`core/schema.py`, `reporting/evidence.py`,
+`docs/DECISIONS.md`, `docs/agent/BACKLOG.md`, релиз) — основной агент. Кандидаты на
+сабагентов: PROXY-001, PROXY-002, ENERGY-002, SELECT-001, API-001 — у каждой свой набор
+файлов и проверяемый Definition of Done.
+
 ## Definition of Done по типу задачи
 
 ### Код
