@@ -136,7 +136,12 @@ async def create_experiment(
     current_user: User = Depends(get_current_user)
 ):
     new_experiment = Experiment(
-        reservoir_type=experiment_data.reservoir.type,
+        # ExperimentSpec.model_type нормализует обе ветки — reservoir и
+        # baseline, — поэтому JMLC-конфиг проходит через API без изменений.
+        # Прежний experiment_data.reservoir.type ронял любую baseline-спеку с
+        # AttributeError: сервисный контур, заявленный в §4, не принимал
+        # половину матрицы, которую сам же проект публикует.
+        reservoir_type=experiment_data.model_type,
         dataset_name=experiment_data.dataset.name,
         config=experiment_data.model_dump(),
         status=ExperimentStatus.QUEUED,
@@ -176,6 +181,7 @@ async def list_experiments(
     query = (
         select(Experiment)
         .options(selectinload(Experiment.results))
+        .where(Experiment.owner_id == current_user.id)
         .offset(skip)
         .limit(limit)
         .order_by(Experiment.id.desc())
@@ -202,6 +208,7 @@ async def compare_experiments(
         select(Experiment)
         .options(selectinload(Experiment.results))
         .where(Experiment.id.in_(id_list))
+        .where(Experiment.owner_id == current_user.id)
     )
     result = await db.execute(query)
     experiments = result.scalars().all()
@@ -250,15 +257,19 @@ async def compare_experiments(
 async def get_experiment(
     experiment_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     query = (
         select(Experiment)
         .options(selectinload(Experiment.results))
         .where(Experiment.id == experiment_id)
+        .where(Experiment.owner_id == current_user.id)
     )
     result = await db.execute(query)
     experiment = result.scalar_one_or_none()
 
+    # 404, а не 403: 403 подтвердил бы, что эксперимент с таким id существует,
+    # то есть отдал бы чужой идентификатор тому, кому он не принадлежит.
     if experiment is None:
         raise HTTPException(status_code=404, detail="Experiment not found")
 
@@ -275,7 +286,9 @@ async def plot_experiment(
 ):
     query = (
         select(Result)
+        .join(Experiment, Result.experiment_id == Experiment.id)
         .where(Result.experiment_id == experiment_id)
+        .where(Experiment.owner_id == current_user.id)
         .order_by(Result.id.desc())
     )
     result = await db.execute(query)
