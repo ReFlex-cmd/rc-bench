@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 from rc_bench.core.reservoirs.registry import get_reservoir
-from rc_bench.profiling.activity import count_step_operations, state_sparsity
+from rc_bench.profiling.activity import count_step_operations, spiking_activity, state_sparsity
 
 
 def test_state_sparsity_counts_exact_and_near_zeros():
@@ -89,3 +89,36 @@ def test_count_step_operations_rejects_negative_readout_dim():
     reservoir = get_reservoir("logistic", {"units": 8, "seed": 7})
     with pytest.raises(ValueError):
         count_step_operations(reservoir, readout_input_dim=-1)
+
+
+def test_lsm_counts_spikes_and_synaptic_events():
+    reservoir = get_reservoir("lsm", {"units": 60, "density": 0.1, "seed": 3})
+    reservoir.reset_state()
+    rng = np.random.default_rng(0)
+    for _ in range(200):
+        reservoir.step(rng.normal(0.0, 1.0, (1, 1)))
+
+    stats = spiking_activity(reservoir)
+    assert stats["steps"] == 200
+    assert stats["total_spikes"] > 0, "LSM с этими параметрами обязан спайковать"
+    assert stats["spikes_per_step"] == pytest.approx(stats["total_spikes"] / 200)
+    # Синаптическое событие — доставка спайка по исходящей ненулевой связи.
+    fanout = np.count_nonzero(reservoir._W_rec) / reservoir._W_rec.shape[0]
+    assert stats["synaptic_events_per_step"] == pytest.approx(
+        stats["spikes_per_step"] * fanout, rel=0.35
+    )
+    assert 0.0 <= stats["mean_firing_rate_hz"] < 1000.0
+
+
+def test_reset_state_clears_spike_counters():
+    reservoir = get_reservoir("lsm", {"units": 40, "seed": 3})
+    reservoir.reset_state()
+    for _ in range(50):
+        reservoir.step(np.array([[1.0]]))
+    assert spiking_activity(reservoir)["steps"] == 50
+    reservoir.reset_state()
+    assert spiking_activity(reservoir)["steps"] == 0
+
+
+def test_non_spiking_reservoir_has_no_spiking_activity():
+    assert spiking_activity(get_reservoir("leaky_esn", {"units": 10, "seed": 3})) is None

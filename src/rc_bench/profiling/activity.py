@@ -26,7 +26,7 @@ Docstring/комментарии каждой модели должны пере
 """
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import numpy as np
 
@@ -95,3 +95,17 @@ def count_step_operations(
         "total_macs": int(counts["reservoir_macs"]) + readout_macs,
         "note": "analytic MAC estimate from weight shapes; not an energy measurement",
     }
+
+
+def spiking_activity(reservoir: BaseReservoir) -> Optional[Dict[str, float]]:
+    """Spiking statistics for models that track it (currently: LSM).
+
+    ``None`` for non-spiking reservoirs: they have no spikes, and
+    substituting zeros would be a lie of a different kind — it would read
+    as "this model ran and did not spike," which is not true for a
+    tanh-driven reservoir that never spikes at all.
+    """
+    stats_fn = getattr(reservoir, "spike_stats", None)
+    if stats_fn is None:
+        return None
+    return {k: float(v) for k, v in stats_fn().items()}

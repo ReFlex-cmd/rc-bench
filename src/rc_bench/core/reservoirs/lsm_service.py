@@ -81,6 +81,8 @@ class LSMReservoir(BaseReservoir):
         tau_mem = float(config.get("tau_mem", 20.0))
         tau_syn = float(config.get("tau_syn", 10.0))
         dt = float(config.get("dt", 1.0))
+        # Kept for spike_stats(): converts per-step firing rate to Hz.
+        self._dt_ms = dt
         # Absolute refractory period in milliseconds → discrete simulation steps.
         # Default 2 ms ≈ 2 steps at dt=1 ms (typical biophysical value).
         t_refractory = float(config.get("t_refractory", 2.0))
@@ -109,6 +111,16 @@ class LSMReservoir(BaseReservoir):
         self._step_v = np.zeros(units)
         self._step_s = np.zeros(units)
         self._step_refrac = np.zeros(units, dtype=np.int32)
+        # Activity counters (PROXY-002): grow only inside step(), reset with
+        # the state so the statistics always describe a single run.
+        self._spike_steps = 0
+        self._spike_total = 0.0
+        self._synaptic_events_total = 0.0
+        # Outgoing fan-out of each neuron: how many nonzero connections it
+        # drives when it spikes. Column j of W_rec is neuron j's contribution
+        # to every other neuron, so summing along axis=0 gives fan-out per
+        # source neuron j.
+        self._out_degree = np.count_nonzero(self._W_rec, axis=0).astype(float)
 
     def step(self, x_t: np.ndarray) -> np.ndarray:
         u = float(np.asarray(x_t).reshape(-1)[0])
@@ -121,7 +133,34 @@ class LSMReservoir(BaseReservoir):
         refrac = np.where(spikes > 0.0, self._refractory_steps, np.maximum(refrac - 1, 0))
         s = self._alpha_syn * s + spikes
         self._step_v, self._step_s, self._step_refrac = v, s, refrac
+        self._spike_steps += 1
+        self._spike_total += float(spikes.sum())
+        self._synaptic_events_total += float(self._out_degree @ spikes)
         return s
+
+    def spike_stats(self) -> Dict[str, float]:
+        """Spiking statistics accumulated since the last reset_state()."""
+        steps = int(getattr(self, "_spike_steps", 0))
+        units = int(self._W_rec.shape[0])
+        if steps == 0:
+            return {
+                "steps": 0,
+                "units": units,
+                "total_spikes": 0.0,
+                "spikes_per_step": 0.0,
+                "synaptic_events_per_step": 0.0,
+                "mean_firing_rate_hz": 0.0,
+            }
+        spikes_per_step = self._spike_total / steps
+        return {
+            "steps": steps,
+            "units": units,
+            "total_spikes": float(self._spike_total),
+            "spikes_per_step": spikes_per_step,
+            "synaptic_events_per_step": self._synaptic_events_total / steps,
+            # dt is in simulated milliseconds; rate is spikes per neuron per second.
+            "mean_firing_rate_hz": (spikes_per_step / units) * (1000.0 / self._dt_ms),
+        }
 
     def step_operation_counts(self) -> Dict[str, int]:
         units = int(self._W_rec.shape[0])
