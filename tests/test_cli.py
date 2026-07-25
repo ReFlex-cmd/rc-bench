@@ -367,3 +367,55 @@ class TestEDA:
             "raw_sha256": "b" * 64,
         }
         assert "eda_report.md" in result.output
+
+
+class TestSelectCommand:
+    """`rcbench select` — единственный путь, которым обещание §9 («найти
+    Pareto-оптимальную архитектуру под ограничения устройства») доходит до
+    пользователя, поэтому проверяется он на настоящем бандле из фикстуры."""
+
+    def _bundle(self, tmp_path: Path) -> Path:
+        from tests.test_selection import _write_bundle
+
+        return _write_bundle(tmp_path / "bundle", energy=True)
+
+    def test_prints_a_report_naming_the_winner(self, tmp_path):
+        result = runner.invoke(
+            app,
+            [
+                "select",
+                "--bundle", str(self._bundle(tmp_path)),
+                "--horizon", "1",
+                "--max-latency-us", "5",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "ridge_ar" in result.stdout
+        # Отвергнутые остаются в отчёте вместе с причиной.
+        assert "esn" in result.stdout
+
+    def test_output_file_matches_what_was_printed(self, tmp_path):
+        out = tmp_path / "nested" / "selection.md"
+        result = runner.invoke(
+            app,
+            [
+                "select",
+                "--bundle", str(self._bundle(tmp_path)),
+                "--horizon", "1",
+                "--output", str(out),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert out.is_file()
+        assert "# Выбор архитектуры" in out.read_text(encoding="utf-8")
+
+    def test_a_bundle_without_the_horizon_fails_loudly(self, tmp_path):
+        result = runner.invoke(
+            app,
+            ["select", "--bundle", str(self._bundle(tmp_path)), "--horizon", "7"],
+        )
+
+        assert result.exit_code == 1
+        assert "no published cells for horizon 7" in result.output
