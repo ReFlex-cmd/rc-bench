@@ -226,6 +226,16 @@ class TestAggregation:
         assert Path(paths["csv"]).read_text().splitlines()[0].startswith("family,model,horizon")
         assert validate_aggregates(rows, paths["json"]) == []
 
+    def test_written_csv_has_no_carriage_returns(self, tmp_path):
+        """Гейт проекта включает `git diff --check`, который считает CR в конце
+        строки лишним пробелом. С умолчанием модуля csv (CRLF) каждая
+        регенерация бандла роняла бы гейт до индексации файла."""
+        runs = _write(_clean_records(), tmp_path / "runs")
+        rows = build_rows(load_cells(runs), runs)
+        paths = write_aggregates(rows, tmp_path / "aggregates")
+
+        assert b"\r" not in Path(paths["csv"]).read_bytes()
+
     def test_edited_table_is_detected(self, tmp_path):
         runs = _write(_clean_records(), tmp_path / "runs")
         rows = build_rows(load_cells(runs), runs)

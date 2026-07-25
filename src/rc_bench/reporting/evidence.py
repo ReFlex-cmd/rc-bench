@@ -179,7 +179,12 @@ def write_aggregates(rows: Sequence[CellRow], out_dir: str | Path) -> Dict[str, 
 
     columns = [f.name for f in fields(CellRow)]
     with csv_path.open("w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=columns)
+        # ``csv`` по умолчанию завершает строки CRLF независимо от платформы.
+        # Для этого репозитория это ловушка: гейт (`verify.sh quick`) проверяет
+        # `git diff --check`, который считает CR в конце строки лишним
+        # пробелом, поэтому каждая регенерация бандла роняла бы гейт до
+        # индексации файла.
+        writer = csv.DictWriter(handle, fieldnames=columns, lineterminator="\n")
         writer.writeheader()
         for row in payload:
             record = dict(row)
