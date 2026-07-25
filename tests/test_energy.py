@@ -115,12 +115,29 @@ def test_measure_energy_derives_window_from_measured_latency(tmp_path, monkeypat
     assert real_read is not energy_mod.read_domain_uj  # sanity: патч применился
 
 
-def test_measure_energy_extends_window_when_estimate_undershoots(tmp_path):
+def _load_driven_counter(monkeypatch, *, per_step_uj: int = 10) -> dict:
+    """Счётчик, растущий от нагрузки, а не от времени.
+
+    Статический файл не годится: с ним счётчик не сдвигается за окно, и
+    measure_energy теперь честно отвечает "unavailable" — ровно так же, как на
+    машине, где окно короче периода обновления. Здесь моделируется то, что
+    делает настоящий RAPL: простой не тратит ничего, шаги тратят.
+    """
+    state = {"steps": 0}
+    monkeypatch.setattr(
+        energy_mod, "read_domain_uj", lambda domain: 1_000_000 + state["steps"] * per_step_uj
+    )
+    return state
+
+
+def test_measure_energy_extends_window_when_estimate_undershoots(tmp_path, monkeypatch):
     root = _fake_rapl(tmp_path)
+    state = _load_driven_counter(monkeypatch)
     calls = {"n": 0}
 
     def step_fn():
         calls["n"] += 1
+        state["steps"] += 1
 
     # p50_ns сильно завышен относительно реальной (почти нулевой) стоимости
     # step_fn, поэтому начальная оценка числа шагов не наберёт min_duration_s
@@ -138,11 +155,12 @@ def test_measure_energy_extends_window_when_estimate_undershoots(tmp_path):
     assert calls["n"] == result["n_steps"]
 
 
-def test_measure_energy_reports_unmet_window_when_step_cap_reached(tmp_path):
+def test_measure_energy_reports_unmet_window_when_step_cap_reached(tmp_path, monkeypatch):
     root = _fake_rapl(tmp_path)
+    state = _load_driven_counter(monkeypatch)
 
     def step_fn():
-        pass
+        state["steps"] += 1
 
     # max_steps специально мал: даже с до-прогоном окно не наберёт
     # min_duration_s. Это должно быть видно потребителю явно, а не
@@ -171,4 +189,53 @@ def test_measure_energy_refuses_a_cap_below_its_own_minimum(tmp_path):
             min_steps=1000,
             root=root,
             max_steps=500,
+        )
+
+
+def test_a_counter_that_never_advanced_is_not_a_measurement(tmp_path):
+    """Окно короче периода обновления счётчика даёт нуль. Нуль, записанный как
+    измеренная энергия, — худший исход: он выглядит числом и утверждает, что
+    модель ничего не потребляет."""
+    root = _fake_rapl(tmp_path)  # статический файл: счётчик не сдвинется
+
+    result = energy_mod.measure_energy(
+        lambda: None, p50_ns=1e5, min_duration_s=0.01, min_steps=1, root=root
+    )
+
+    assert result["status"] == "unavailable"
+    assert "did not advance" in result["reason"]
+    assert "net_energy_per_inference_mj" not in result
+
+
+def test_net_energy_below_the_idle_baseline_is_not_a_measurement(tmp_path, monkeypatch):
+    """Потребление модели утонуло в разбросе базовой линии: числа на один
+    вывод из такого окна не получить, и ноль вместо него был бы шумом,
+    выданным за результат."""
+    root = _fake_rapl(tmp_path)
+    # Порядок чтений: проверка доступности, начало/конец простоя,
+    # начало/конец окна под нагрузкой. Простой «тратит» 10 мДж, нагрузка —
+    # 0.1 мДж, то есть на два порядка меньше базовой линии.
+    sequence = iter([0, 0, 10_000, 10_000, 10_100])
+
+    def read(domain):
+        return next(sequence, 10_100)
+
+    monkeypatch.setattr(energy_mod, "read_domain_uj", read)
+
+    result = energy_mod.measure_energy(
+        lambda: None, p50_ns=1e5, min_duration_s=0.01, min_steps=1, root=root
+    )
+
+    assert result["status"] == "unavailable"
+    assert "not resolvable" in result["reason"]
+
+
+def test_a_zero_length_window_is_refused(tmp_path):
+    """`window_target_met` сравнивает длительность с целью: при нулевой цели
+    любое измерение «достигает» её тривиально."""
+    root = _fake_rapl(tmp_path)
+
+    with pytest.raises(ValueError, match="not a window"):
+        energy_mod.measure_energy(
+            lambda: None, p50_ns=1e5, min_duration_s=0.0, min_steps=1, root=root
         )

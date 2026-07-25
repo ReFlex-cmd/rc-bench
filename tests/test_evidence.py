@@ -327,6 +327,22 @@ class TestModeAwareValidation:
         records = [_reservoir_record("esn", 1, mode="best_effort", hpo_budget=60)]
         assert validate_records(records, fair_budget=20) == []
 
+    def test_a_fair_reservoir_that_never_tuned_is_reported(self):
+        """DEC-004 — весь смысл fair-режима, и обойти его проще всего не
+        неравными бюджетами, а отсутствием настройки: ячейка без HPO не
+        попадает в множество бюджетов, и правило равенства видит один бюджет
+        вместо двух. ProtocolSpec.use_hpo по умолчанию False, поэтому дыра
+        достижима забытой строкой в шаблоне, а не только опечаткой."""
+        tuned = _reservoir_record("esn", 1, hpo_budget=20)
+        untuned = _reservoir_record("lsm", 1, hpo_budget=20)
+        untuned.spec.protocol.use_hpo = False
+        untuned.resolved_spec.protocol.use_hpo = False
+        untuned.result.config_hash = untuned.resolved_spec.config_hash()
+        untuned.result.frozen_config_hash = untuned.spec.config_hash()
+
+        problems = validate_records([tuned, untuned])
+        assert any("fair" in p and "did not run HPO" in p for p in problems)
+
     def test_a_best_effort_reservoir_that_never_tuned_is_reported(self):
         """Порог бюджета живёт под use_hpo, поэтому ячейка с use_hpo=False
         обходила его целиком и публиковалась как «лучшее усилие», не сделав

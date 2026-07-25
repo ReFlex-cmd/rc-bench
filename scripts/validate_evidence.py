@@ -45,8 +45,9 @@ def main() -> int:
         "--runs-subdir",
         default=None,
         help=(
-            "validate a single RunRecord directory instead of whole modes "
-            "(e.g. fair/runs); mutually exclusive with --modes"
+            "validate a single RunRecord directory instead of every mode "
+            "(e.g. fair/runs); mutually exclusive with --modes. A '<mode>/runs' "
+            "path is still checked against that mode"
         ),
     )
     parser.add_argument(
@@ -107,11 +108,16 @@ def main() -> int:
             print(f"wrote {written['csv']}")
 
     if args.runs_subdir is not None:
+        # Даже в узкой форме каталог вида "<mode>/runs" называет режим, и
+        # сверку записей с этим именем терять незачем: иначе документированная
+        # отладочная форма оказывается обходным путём вокруг проверки.
+        head = args.runs_subdir.strip("/").split("/")[0]
         problems = validate_bundle(
             bundle,
             runs_subdir=args.runs_subdir,
             expected_cells=args.expected_cells,
             require_profiles=not args.no_profiles,
+            expected_mode=head if head in ("fair", "best_effort") else None,
         )
         scope = args.runs_subdir
     else:

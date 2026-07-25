@@ -47,7 +47,7 @@ from rc_bench.core.baselines import RIDGE_AR_LAGS, SEASONAL_PERIOD, ar_lag_featu
 from rc_bench.core.data_provider import get_data_for_experiment
 from rc_bench.core.reservoirs.base import BaseReservoir
 from rc_bench.core.reservoirs.registry import get_reservoir
-from rc_bench.core.schema import ExperimentSpec
+from rc_bench.core.schema import EnergyResult, ExperimentSpec
 from rc_bench.profiling.activity import (
     count_step_operations,
     spiking_activity,
@@ -475,6 +475,26 @@ _ACTIVITY_NOTE = (
 )
 
 
+def _checked_energy(measurement: Dict[str, Any]) -> Dict[str, Any]:
+    """Прогнать измерение через EnergyResult перед публикацией.
+
+    Схема запрещает записи, у которых статус и числа расходятся, но до этой
+    проверки её никто не применял к артефакту профиля — а именно он и несёт
+    измеренную энергию. Без неё контракт держался только на честности
+    measure_energy, то есть не держался.
+
+    Возвращается исходный словарь: в нём есть диагностика (длительность окна,
+    число шагов, энергия простоя), которой в схеме нет и которая нужна тому,
+    кто будет разбираться с сомнительным числом.
+    """
+    # Берутся только реально присутствующие ключи: отсутствующий — это не
+    # None, а «поле не заполнялось», и значения по умолчанию у схемы свои.
+    EnergyResult.model_validate(
+        {key: measurement[key] for key in EnergyResult.model_fields if key in measurement}
+    )
+    return measurement
+
+
 def _baseline_activity(*, readout_macs: int, description: str) -> Dict[str, Any]:
     """Блок activity для детерминированного baseline.
 
@@ -560,10 +580,12 @@ def _profile_reservoir_cell(
     }
 
     reservoir.reset_state()
-    energy = measure_energy(
-        build_reservoir_compute_step_fn(reservoir, readout, X_test_s),
-        p50_ns=deployable_latency.p50_ns,
-        min_duration_s=energy_window_s,
+    energy = _checked_energy(
+        measure_energy(
+            build_reservoir_compute_step_fn(reservoir, readout, X_test_s),
+            p50_ns=deployable_latency.p50_ns,
+            min_duration_s=energy_window_s,
+        )
     )
 
     return {
@@ -642,12 +664,14 @@ def _profile_ridge_ar_cell(
         readout_macs=2 * n_lags,
         description=f"{n_lags}-lag feature scaling plus the ridge dot product",
     )
-    energy = measure_energy(
-        build_ridge_ar_compute_step_fn(
-            values, tau, horizon, fit.scaler, fit.final_model, n_lags=n_lags
-        ),
-        p50_ns=deployable_latency.p50_ns,
-        min_duration_s=energy_window_s,
+    energy = _checked_energy(
+        measure_energy(
+            build_ridge_ar_compute_step_fn(
+                values, tau, horizon, fit.scaler, fit.final_model, n_lags=n_lags
+            ),
+            p50_ns=deployable_latency.p50_ns,
+            min_duration_s=energy_window_s,
+        )
     )
 
     return {
@@ -719,10 +743,12 @@ def _profile_persistence_family_cell(
         readout_macs=0,
         description="a buffer lookup performs no multiply-accumulate at all",
     )
-    energy = measure_energy(
-        builder(values, tau, lag),
-        p50_ns=latency.p50_ns,
-        min_duration_s=energy_window_s,
+    energy = _checked_energy(
+        measure_energy(
+            builder(values, tau, lag),
+            p50_ns=latency.p50_ns,
+            min_duration_s=energy_window_s,
+        )
     )
 
     return {

@@ -324,13 +324,17 @@ def validate_records(
                         f"{label}: best_effort budget {protocol.hpo_budget} is "
                         f"smaller than the fair budget {fair_budget}"
                     )
-            elif protocol.mode == "best_effort":
-                # Без этой ветки порог бюджета обходится целиком: ячейка без
-                # HPO не попадает ни в одну проверку и публикуется как
-                # «лучшее усилие», не сделав ни одного trial.
+            else:
+                # Ячейка без HPO не попадает ни в hpo_budgets, ни под порог
+                # best_effort, то есть обходит правило бюджета целиком — в
+                # обоих режимах. В fair это опаснее: ESN со ста trial'ами и
+                # LSM на стоковых гиперпараметрах дают один бюджет в множестве
+                # и публикуются под вывеской равного сравнения (DEC-004).
+                # ProtocolSpec.use_hpo по умолчанию False, поэтому дыра
+                # достижима не опечаткой, а забытой строкой в шаблоне.
                 problems.append(
-                    f"{label}: best_effort reservoir cell did not run HPO, so its "
-                    "budget cannot be compared with the fair one"
+                    f"{label}: {protocol.mode} reservoir cell did not run HPO, so its "
+                    "budget is not comparable with the other reservoir cells"
                 )
 
         mean, _ = _metrics_of(record)

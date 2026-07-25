@@ -251,16 +251,23 @@ class EnergyResult(BaseModel):
         """Статус и числа — два утверждения об одном факте; расходиться им
         нельзя. ``measured`` без чисел не говорит, сколько намерено, а числа
         при ``unavailable`` появились неизвестно откуда."""
-        present = [
-            name for name in MEASURED_ENERGY_FIELDS if getattr(self, name) is not None
-        ]
         if self.status == "measured":
             missing = [
                 name for name in MEASURED_ENERGY_FIELDS if getattr(self, name) is None
             ]
             if missing:
                 raise ValueError(f"status='measured' requires {', '.join(missing)}")
-        elif present:
+            return self
+
+        # Обратное направление: любое поле, существующее только при измерении,
+        # при 'unavailable' появилось неизвестно откуда. domains проверяется
+        # тоже — список доменов счётчика взять неоткуда, если счётчика не было.
+        present = [
+            name for name in MEASURED_ENERGY_FIELDS if getattr(self, name) is not None
+        ]
+        if self.domains:
+            present.append("domains")
+        if present:
             raise ValueError(
                 f"status='unavailable' cannot carry {', '.join(present)}"
             )

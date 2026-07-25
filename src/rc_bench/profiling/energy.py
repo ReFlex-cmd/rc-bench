@@ -225,6 +225,11 @@ def measure_energy(
             нарушенную половину инварианта («не меньше ``min_steps`` шагов»)
             иначе никто бы не заметил.
     """
+    if min_duration_s <= 0:
+        raise ValueError(
+            f"min_duration_s={min_duration_s} is not a window: with a zero-length "
+            "target every measurement trivially 'meets' it"
+        )
     if max_steps < min_steps:
         raise ValueError(
             f"max_steps={max_steps} is below min_steps={min_steps}: the window "
@@ -260,6 +265,34 @@ def measure_energy(
     net_uj = max(total_uj - idle_scaled_uj, 0.0)
 
     total_j, net_j = total_uj / 1e6, net_uj / 1e6
+
+    # Счётчик обновляется с периодом порядка миллисекунды. Если за всё окно он
+    # не сдвинулся, измерения не было — а нуль, записанный как измеренная
+    # энергия, это худший исход из возможных: он и выглядит числом, и
+    # утверждает, что модель ничего не потребляет.
+    if total_uj <= 0:
+        return {
+            "status": "unavailable",
+            "backend": None,
+            "reason": (
+                f"intel-rapl counters did not advance over {duration_s:.4f} s "
+                "(window shorter than the counter update period)"
+            ),
+        }
+    # Net ≤ 0 означает, что потребление модели утонуло в разбросе базовой
+    # линии: числа на один вывод из такого окна не получить, и подставлять
+    # ноль вместо него значило бы выдать шум за результат.
+    if net_uj <= 0:
+        return {
+            "status": "unavailable",
+            "backend": None,
+            "reason": (
+                f"net energy is not resolvable: the load window drew "
+                f"{total_j:.4f} J against an idle baseline of "
+                f"{idle_scaled_uj / 1e6:.4f} J over the same duration"
+            ),
+        }
+
     per_inference_mj = (total_uj / 1e3) / n_steps
     net_per_inference_mj = (net_uj / 1e3) / n_steps
     return {

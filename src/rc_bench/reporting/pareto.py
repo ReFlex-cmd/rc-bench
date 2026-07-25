@@ -104,6 +104,15 @@ def load_points(bundle_dir: str | Path, cost: str) -> List[ParetoPoint]:
             raise MissingCostAxis(
                 f"{key[0]}/{key[1]} h{key[2]}: profile has no {cost_key}"
             )
+        # Оси логарифмические, поэтому неположительная стоимость — не точка на
+        # графике, а причина уронить весь рисунок в math domain error. Ноль
+        # здесь означает измерение ниже разрешения прибора, то есть ту же
+        # неизмеренность, что и None.
+        if float(value) <= 0:
+            raise MissingCostAxis(
+                f"{key[0]}/{key[1]} h{key[2]}: {cost_key} is {value}, which a "
+                "logarithmic cost axis cannot represent"
+            )
         points.append(
             ParetoPoint(
                 family=row["family"],

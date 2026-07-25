@@ -341,11 +341,24 @@ class TestActivityAndEnergyBlocks:
         assert cell["activity"]["spiking"] is None
 
     def test_lsm_cell_reports_spiking_activity(self, unavailable_energy):
-        cell = self._cell("reservoir", "lsm", {"units": 8})
+        """Проверка проводки: блок доходит до ячейки и несёт наблюдённые, а не
+        нулевые счётчики. Сама ось (какое именно число считается синаптическим
+        событием) закреплена в tests/test_activity.py."""
+        units, warmup, n_steps = 8, 5, 20
+        spiking = self._cell("reservoir", "lsm", {"units": units})["activity"]["spiking"]
 
-        spiking = cell["activity"]["spiking"]
-        assert spiking["spikes_per_step"] >= 0.0
-        assert spiking["synaptic_events_per_step"] >= 0.0
+        # Счётчики видели весь измеренный прогон: активность снимается до
+        # энергетического окна именно потому, что reset_state() их обнуляет, и
+        # steps=0 означал бы, что порядок нарушен и в артефакт уходит пустышка.
+        assert spiking["steps"] == warmup + n_steps
+        assert spiking["units"] == units
+        # На этой крошечной конфигурации LIF может не пробить порог ни разу —
+        # это законный ноль. Не законно другое: чтобы на шаг приходилось
+        # спайков больше, чем нейронов, или чтобы средние разошлись с суммой.
+        assert 0.0 <= spiking["spikes_per_step"] <= units
+        assert spiking["spikes_per_step"] == pytest.approx(
+            spiking["total_spikes"] / spiking["steps"]
+        )
 
     def test_readout_macs_count_the_state_the_readout_actually_sees(
         self, unavailable_energy
@@ -376,6 +389,28 @@ class TestActivityAndEnergyBlocks:
         # Рабочее состояние baseline — окно входа, а не состояние модели;
         # его разреженность ничего не говорит о стоимости шага.
         assert cell["activity"]["state_sparsity"] is None
+
+    @pytest.mark.parametrize(
+        ("model", "expected_macs"),
+        [
+            # persistence: шаг — чтение элемента кольцевого буфера, арифметики
+            # в нём нет вовсе.
+            ("persistence", 0),
+            # ridge_ar: (row - mean) / scale — одно скалярно-векторное
+            # умножение на n_lags — плюс скалярное произведение с
+            # коэффициентами, ещё n_lags.
+            ("ridge_ar", 2 * RIDGE_AR_LAGS),
+        ],
+    )
+    def test_baseline_readout_macs_match_the_arithmetic_of_the_step(
+        self, unavailable_energy, model, expected_macs
+    ):
+        """Числа уходят в публикуемый артефакт, поэтому закрепляются точным
+        равенством: без него любая правка формулы проходит молча."""
+        operations = self._cell("baseline", model)["activity"]["operations"]
+
+        assert operations["readout_macs"] == expected_macs
+        assert operations["total_macs"] == expected_macs
 
     def test_energy_is_measured_against_the_deployable_latency(
         self, unavailable_energy
