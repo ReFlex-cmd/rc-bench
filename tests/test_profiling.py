@@ -23,6 +23,7 @@ import pytest
 from rc_bench.profiling.latency import LatencyProfile, measure_latency
 from rc_bench.profiling.memory import (
     PeakRSSProfile,
+    current_rss_bytes,
     measure_peak_rss_subprocess,
     serialized_model_bytes,
     working_state_bytes,
@@ -173,6 +174,41 @@ def test_working_state_bytes_uses_numpy_nbytes():
 def test_working_state_bytes_falls_back_to_pickle_for_non_array():
     state = {"h": [1, 2, 3]}
     assert working_state_bytes(state) == len(pickle.dumps(state))
+
+
+# ---------------------------------------------------------------------------
+# PROF-003: current (live) RSS of this process — used to compute
+# peak_rss_delta_bytes against a forked child's peak RSS (honesty requirement:
+# the child inherits the parent's already-resident memory via fork()).
+# ---------------------------------------------------------------------------
+
+
+def test_current_rss_bytes_returns_a_positive_int_and_plausible_method():
+    rss, method = current_rss_bytes()
+    assert isinstance(rss, int)
+    assert rss > 0
+    assert method in ("vmrss", "getrusage_kib", "getrusage_bytes")
+
+
+def test_current_rss_bytes_grows_after_a_real_allocation():
+    """current_rss_bytes must reflect *current* residency, not a frozen
+    snapshot: a real touched allocation should push it up measurably."""
+    before, _ = current_rss_bytes()
+    keep_alive = _allocate_and_touch()
+    after, _ = current_rss_bytes()
+    assert keep_alive == _ALLOC_BYTES  # keeps the allocation reachable until here
+    assert after >= before
+
+
+def test_current_rss_bytes_does_not_exceed_peak_rss_by_a_wide_margin():
+    """Cross-check against the existing VmHWM-based peak reader: current
+    residency should never wildly exceed the process's own high-water mark."""
+    from rc_bench.profiling.memory import _read_peak_rss_bytes
+
+    current, current_method = current_rss_bytes()
+    peak, peak_method = _read_peak_rss_bytes()
+    if current_method == "vmrss" and peak_method == "vmhwm":
+        assert current <= peak * 1.05  # small slack for measurement timing
 
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-"""Model/state size and isolated peak-RSS profiling (PROF-002).
+"""Model/state size and isolated peak-RSS profiling (PROF-002/PROF-003).
 
 Covers three measurements from docs/agent/PROJECT_CONTRACT.md
 ("Ресурсный профиль"):
@@ -18,6 +18,13 @@ raise a clear ``RuntimeError`` on platforms without a "fork" start method
 (e.g. Windows) rather than silently falling back to "spawn", which would
 require ``build_and_run`` to be a picklable top-level function instead of an
 arbitrary callable/closure.
+
+``current_rss_bytes()`` (PROF-003) additionally reads this process's own
+*current* RSS (as opposed to ``_read_peak_rss_bytes``'s high-water mark), so
+callers of :func:`measure_peak_rss_subprocess` can report an honest
+``peak_rss_delta_bytes`` — the fork inherits the parent's already-resident
+memory, so the child's raw peak RSS alone overstates what its own workload
+added.
 """
 from __future__ import annotations
 
@@ -84,6 +91,42 @@ def _read_peak_rss_bytes() -> "tuple[int, str]":
                 if line.startswith("VmHWM:"):
                     kib = int(line.split()[1])
                     return kib * 1024, "vmhwm"
+    except (OSError, ValueError, IndexError):
+        pass
+
+    import resource
+
+    ru_maxrss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    if sys.platform == "darwin":
+        return int(ru_maxrss), "getrusage_bytes"
+    return int(ru_maxrss) * 1024, "getrusage_kib"
+
+
+def current_rss_bytes() -> "tuple[int, str]":
+    """Read this process's own CURRENT resident set size, in bytes.
+
+    Used to compute the "honesty" delta for :func:`measure_peak_rss_subprocess`
+    (PROF-003): a forked child inherits the parent's already-resident memory,
+    so ``peak_rss_delta_bytes = peak_rss_bytes - current_rss_bytes()`` (read in
+    the parent, immediately before the fork) isolates what the child's own
+    workload actually added.
+
+    Mirrors :func:`_read_peak_rss_bytes` in style: prefers ``/proc/self/status``
+    ``VmRSS`` (Linux, kibibytes — the kernel's live/current RSS, distinct from
+    ``VmHWM``'s all-time high-water mark). Falls back to
+    ``resource.getrusage(RUSAGE_SELF).ru_maxrss`` when ``/proc`` is
+    unavailable (non-Linux platforms); note that this fallback returns a
+    HIGH-WATER MARK (the peak RSS ever reached by this process), not the
+    current RSS, since POSIX ``getrusage`` exposes no portable "current RSS"
+    field — callers on such platforms should treat the returned value as an
+    upper bound rather than a live reading.
+    """
+    try:
+        with open("/proc/self/status", "r") as fh:
+            for line in fh:
+                if line.startswith("VmRSS:"):
+                    kib = int(line.split()[1])
+                    return kib * 1024, "vmrss"
     except (OSError, ValueError, IndexError):
         pass
 
