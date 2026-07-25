@@ -1,6 +1,7 @@
 """Энергия измеряется, а не оценивается. Тесты работают на подставном sysfs:
 настоящий RAPL нельзя воспроизвести в CI, а вот арифметику окна, обработку
 переполнения счётчика и честный отказ при отсутствии доступа — можно и нужно."""
+import time
 from pathlib import Path
 
 import pytest
@@ -51,11 +52,13 @@ def test_status_is_available_when_counter_reads(tmp_path):
 def test_counter_wraparound_is_not_reported_as_negative_energy(tmp_path):
     root = _fake_rapl(tmp_path)
     domain = energy_mod.discover_rapl_domains(root)[0]
-    # Счётчик переполнился: конец меньше начала.
+    # Счётчик переполнился: конец меньше начала. max_energy_range_uj —
+    # исключительный модуль (счётчик пробегает 0..range-1 и сбрасывается),
+    # поэтому полный цикл равен max_range_uj без поправки на единицу.
     delta_uj = energy_mod.counter_delta_uj(
         start_uj=domain.max_range_uj - 1_000, end_uj=2_000, domain=domain
     )
-    assert delta_uj == pytest.approx(3_001)
+    assert delta_uj == pytest.approx(3_000)
 
 
 def test_measure_energy_reports_unavailable_instead_of_failing(tmp_path):
@@ -69,19 +72,31 @@ def test_measure_energy_reports_unavailable_instead_of_failing(tmp_path):
 
 def test_measure_energy_derives_window_from_measured_latency(tmp_path, monkeypatch):
     root = _fake_rapl(tmp_path)
-    # Счётчик, растущий на 1 мДж за каждое чтение, даёт предсказуемую арифметику.
+    # Чтения: 1 разведочное (energy_backend_status внутри measure_energy),
+    # затем idle-старт/финиш и измерение-старт/финиш. Задаём дельты явно
+    # (500 мкДж на простое, 1500 мкДж на измерении) вместо "поровну на
+    # каждое чтение" — иначе, когда окна почти равны по длительности (как в
+    # этом тесте, без до-прогона), фиксированная-на-чтение дельта делает
+    # idle-базовую линию неотличимой от полной энергии и net схлопывается в
+    # 0 независимо от того, правильно ли работает вычитание.
+    schedule = [0, 0, 500, 500, 2_000]
     reads = {"n": 0}
     real_read = energy_mod.read_domain_uj
 
     def fake_read(domain):
+        value = schedule[reads["n"]]
         reads["n"] += 1
-        return 1_000 * reads["n"]
+        return value
 
     monkeypatch.setattr(energy_mod, "read_domain_uj", fake_read)
     calls = {"n": 0}
 
+    # step_fn стоит примерно столько же, сколько заявляет p50_ns (1мс), так
+    # что начальная оценка окна оправдывается сама и до-прогон не нужен —
+    # проверяем именно базовый случай, «оценка попала».
     def step_fn():
         calls["n"] += 1
+        time.sleep(0.0011)
 
     result = energy_mod.measure_energy(
         step_fn, p50_ns=1_000_000.0, min_duration_s=0.05, min_steps=10, root=root
@@ -89,8 +104,54 @@ def test_measure_energy_derives_window_from_measured_latency(tmp_path, monkeypat
     assert result["status"] == "measured"
     # min_duration_s / p50 = 0.05с / 1мс = 50 шагов, что больше min_steps=10.
     assert result["n_steps"] == 50
-    assert calls["n"] >= 50
+    assert calls["n"] == 50
+    assert result["p50_ns"] == 1_000_000.0
+    assert result["min_duration_s"] == 0.05
+    assert result["window_target_met"] is True
+    assert result["duration_s"] >= result["min_duration_s"]
     assert result["energy_per_inference_mj"] > 0
     assert result["samples_per_joule"] > 0
     assert result["energy_delay_product_j_s"] > 0
     assert real_read is not energy_mod.read_domain_uj  # sanity: патч применился
+
+
+def test_measure_energy_extends_window_when_estimate_undershoots(tmp_path):
+    root = _fake_rapl(tmp_path)
+    calls = {"n": 0}
+
+    def step_fn():
+        calls["n"] += 1
+
+    # p50_ns сильно завышен относительно реальной (почти нулевой) стоимости
+    # step_fn, поэтому начальная оценка числа шагов не наберёт min_duration_s
+    # — модуль обязан до-прогнать шаги по наблюдённой стоимости, пока не
+    # наберёт окно.
+    result = energy_mod.measure_energy(
+        step_fn, p50_ns=1e5, min_duration_s=0.05, min_steps=1, root=root,
+        max_steps=5_000_000,
+    )
+    assert result["status"] == "measured"
+    assert result["window_target_met"] is True
+    assert result["duration_s"] >= result["min_duration_s"]
+    # Начальная оценка (0.05с / 100мкс = 500 шагов) заведомо недостаточна.
+    assert result["n_steps"] > 500
+    assert calls["n"] == result["n_steps"]
+
+
+def test_measure_energy_reports_unmet_window_when_step_cap_reached(tmp_path):
+    root = _fake_rapl(tmp_path)
+
+    def step_fn():
+        pass
+
+    # max_steps специально мал: даже с до-прогоном окно не наберёт
+    # min_duration_s. Это должно быть видно потребителю явно, а не
+    # маскироваться под полноценное "measured".
+    result = energy_mod.measure_energy(
+        step_fn, p50_ns=1e5, min_duration_s=0.05, min_steps=1, root=root,
+        max_steps=50,
+    )
+    assert result["status"] == "measured"
+    assert result["window_target_met"] is False
+    assert result["n_steps"] == 50
+    assert result["duration_s"] < result["min_duration_s"]
