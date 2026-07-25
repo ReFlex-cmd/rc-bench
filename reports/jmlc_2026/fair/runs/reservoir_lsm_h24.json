@@ -1,0 +1,349 @@
+{
+  "spec": {
+    "dataset": {
+      "name": "uci_household_power",
+      "length": 12000,
+      "seed": 42,
+      "raw_sha256": "4259c9d7ece5dbee9ab8d53682baac68d791c864f0f64a52b4043cb3b90894b7"
+    },
+    "reservoir": {
+      "type": "lsm",
+      "params": {}
+    },
+    "baseline": null,
+    "protocol": {
+      "washout": 200,
+      "train_frac": 0.6,
+      "val_frac": 0.2,
+      "forecasting_mode": "fixed_horizon",
+      "horizon": 24,
+      "use_hpo": true,
+      "hpo_budget": 20,
+      "n_seeds": 5,
+      "selection_metric": "nrmse_std",
+      "seasonal_period": 24
+    },
+    "readout": {
+      "type": "ridge",
+      "alpha_grid": [
+        0.001,
+        0.01,
+        0.1,
+        1.0,
+        10.0
+      ]
+    },
+    "seed": 42
+  },
+  "resolved_spec": {
+    "dataset": {
+      "name": "uci_household_power",
+      "length": 12000,
+      "seed": 42,
+      "raw_sha256": "4259c9d7ece5dbee9ab8d53682baac68d791c864f0f64a52b4043cb3b90894b7"
+    },
+    "reservoir": {
+      "type": "lsm",
+      "params": {
+        "tau_mem": 45.90901203775811,
+        "tau_syn": 2.0117051015571965,
+        "v_th": 0.6082609298592602,
+        "t_refractory": 2.063940417869003,
+        "w_rec_scale": 18.46422402759658,
+        "input_scale": 3.703319081613318,
+        "density": 0.19628594487275397
+      }
+    },
+    "baseline": null,
+    "protocol": {
+      "washout": 200,
+      "train_frac": 0.6,
+      "val_frac": 0.2,
+      "forecasting_mode": "fixed_horizon",
+      "horizon": 24,
+      "use_hpo": true,
+      "hpo_budget": 20,
+      "n_seeds": 5,
+      "selection_metric": "nrmse_std",
+      "seasonal_period": 24
+    },
+    "readout": {
+      "type": "ridge",
+      "alpha_grid": [
+        54.90597633778299
+      ]
+    },
+    "seed": 42
+  },
+  "result": {
+    "status": "completed",
+    "config_hash": "fb433f72f311e0ce",
+    "frozen_config_hash": "32a855cb37c6d4c3",
+    "resolved_spec": {
+      "dataset": {
+        "name": "uci_household_power",
+        "length": 12000,
+        "seed": 42,
+        "raw_sha256": "4259c9d7ece5dbee9ab8d53682baac68d791c864f0f64a52b4043cb3b90894b7"
+      },
+      "reservoir": {
+        "type": "lsm",
+        "params": {
+          "tau_mem": 45.90901203775811,
+          "tau_syn": 2.0117051015571965,
+          "v_th": 0.6082609298592602,
+          "t_refractory": 2.063940417869003,
+          "w_rec_scale": 18.46422402759658,
+          "input_scale": 3.703319081613318,
+          "density": 0.19628594487275397
+        }
+      },
+      "baseline": null,
+      "protocol": {
+        "washout": 200,
+        "train_frac": 0.6,
+        "val_frac": 0.2,
+        "forecasting_mode": "fixed_horizon",
+        "horizon": 24,
+        "use_hpo": true,
+        "hpo_budget": 20,
+        "n_seeds": 5,
+        "selection_metric": "nrmse_std",
+        "seasonal_period": 24
+      },
+      "readout": {
+        "type": "ridge",
+        "alpha_grid": [
+          54.90597633778299
+        ]
+      },
+      "seed": 42
+    },
+    "metrics": null,
+    "multi_seed_result": {
+      "n_seeds": 5,
+      "seeds": [
+        42,
+        43,
+        44,
+        45,
+        46
+      ],
+      "metrics_per_seed": [
+        {
+          "rmse": 0.9471301403379181,
+          "nrmse_range": 0.1515432471460212,
+          "nrmse_std": 0.9825018387872018,
+          "nrmse_var": 0.9653098632202326,
+          "mae": 0.7582680653883321,
+          "mse": 0.8970555027365243,
+          "prediction_horizon": 0,
+          "val_nrmse_range": 0.17090741544853855,
+          "val_nrmse_std": 0.9800402197877129,
+          "mase": 1.050638359244059,
+          "mae_skill": -0.017695155895156356,
+          "train_time": 1.194877614005236,
+          "inference_latency": 0.3057922229927499,
+          "peak_memory": 90043978
+        },
+        {
+          "rmse": 0.9492741231884153,
+          "nrmse_range": 0.15188628989078465,
+          "nrmse_std": 0.9847258912201549,
+          "nrmse_var": 0.9696850808393284,
+          "mae": 0.760274370255727,
+          "mse": 0.9011213609551347,
+          "prediction_horizon": 1,
+          "val_nrmse_range": 0.17194214166447105,
+          "val_nrmse_std": 0.985973685608498,
+          "mase": 1.0534182479802983,
+          "mae_skill": -0.020387880062237018,
+          "train_time": 1.2772251650167163,
+          "inference_latency": 0.24124627801938914,
+          "peak_memory": 90043548
+        },
+        {
+          "rmse": 0.9487159475778177,
+          "nrmse_range": 0.1517969803641366,
+          "nrmse_std": 0.9841468698793466,
+          "nrmse_var": 0.9685450614933159,
+          "mae": 0.7591723678964785,
+          "mse": 0.9000619491884767,
+          "prediction_horizon": 0,
+          "val_nrmse_range": 0.1710112991270738,
+          "val_nrmse_std": 0.9806359235076297,
+          "mase": 1.051891339485199,
+          "mae_skill": -0.018908848418964563,
+          "train_time": 1.3421095669909846,
+          "inference_latency": 0.24389409902505577,
+          "peak_memory": 90043246
+        },
+        {
+          "rmse": 0.9458564339524875,
+          "nrmse_range": 0.15133945086361178,
+          "nrmse_std": 0.9811805643261081,
+          "nrmse_var": 0.9627152998113,
+          "mae": 0.7587656887287073,
+          "mse": 0.8946443936493164,
+          "prediction_horizon": 0,
+          "val_nrmse_range": 0.1726539552626632,
+          "val_nrmse_std": 0.9900554625951153,
+          "mase": 1.051327854415645,
+          "mae_skill": -0.018363031658460205,
+          "train_time": 1.446157825004775,
+          "inference_latency": 0.22638081698096357,
+          "peak_memory": 90043522
+        },
+        {
+          "rmse": 0.9479806132817669,
+          "nrmse_range": 0.15167932499428255,
+          "nrmse_std": 0.9833840736518552,
+          "nrmse_var": 0.9670442363121173,
+          "mae": 0.7600942249298202,
+          "mse": 0.8986672431580748,
+          "prediction_horizon": 1,
+          "val_nrmse_range": 0.17301793769796917,
+          "val_nrmse_std": 0.9921426594844951,
+          "mase": 1.0531686428626947,
+          "mae_skill": -0.020146101417057416,
+          "train_time": 1.440171681024367,
+          "inference_latency": 0.23573939700145274,
+          "peak_memory": 90043292
+        }
+      ],
+      "mean": {
+        "rmse": 0.9477914516676812,
+        "nrmse_range": 0.15164905865176737,
+        "nrmse_std": 0.9831878475729333,
+        "nrmse_var": 0.9666599083352588,
+        "mae": 0.759314943439813,
+        "mse": 0.8983100899375053,
+        "prediction_horizon": 0.4,
+        "val_nrmse_range": 0.17190654984014314,
+        "val_nrmse_std": 0.9857695901966903,
+        "mase": 1.0520888887975792,
+        "mae_skill": -0.01910020349037511,
+        "train_time": 1.3401083704084158,
+        "inference_latency": 0.25061056280392224,
+        "peak_memory": 90043517.2
+      },
+      "std": {
+        "rmse": 0.0013481854356397955,
+        "nrmse_range": 0.00021571312111229928,
+        "nrmse_std": 0.0013985350197699652,
+        "nrmse_var": 0.0027493516200370674,
+        "mae": 0.0008581581488373651,
+        "mse": 0.0025549526568435597,
+        "prediction_horizon": 0.5477225575051662,
+        "val_nrmse_range": 0.0009479989432790434,
+        "val_nrmse_std": 0.005436142664093233,
+        "mase": 0.0011890437044907807,
+        "mae_skill": 0.0011517607438953738,
+        "train_time": 0.10759812715045985,
+        "inference_latency": 0.031567580250090564,
+        "peak_memory": 290.50507740829596
+      }
+    },
+    "hpo_best_params": {
+      "reservoir_params": {
+        "tau_mem": 45.90901203775811,
+        "tau_syn": 2.0117051015571965,
+        "v_th": 0.6082609298592602,
+        "t_refractory": 2.063940417869003,
+        "w_rec_scale": 18.46422402759658,
+        "input_scale": 3.703319081613318,
+        "density": 0.19628594487275397
+      },
+      "readout_alpha": 54.90597633778299
+    },
+    "hpo_convergence": [
+      1.0315022255144364,
+      1.0315022255144364,
+      1.0315022255144364,
+      1.0315022255144364,
+      1.0315022255144364,
+      1.0089171309634917,
+      0.980457256828483,
+      0.980457256828483,
+      0.980457256828483,
+      0.980457256828483,
+      0.9800402197877129,
+      0.9800402197877129,
+      0.9800402197877129,
+      0.9800402197877129,
+      0.9800402197877129,
+      0.9800402197877129,
+      0.9800402197877129
+    ],
+    "hpo_diagnostics": {
+      "n_trials": 20,
+      "n_completed": 17,
+      "n_pruned": 3,
+      "n_failed": 0,
+      "best_trial_number": 11
+    },
+    "model_family": "reservoir",
+    "deterministic": false,
+    "evaluated_seeds": [
+      42,
+      43,
+      44,
+      45,
+      46
+    ],
+    "selection": {
+      "method": "optuna",
+      "metric": "nrmse_std",
+      "candidates": [],
+      "selected_params": {
+        "reservoir_params": {
+          "tau_mem": 45.90901203775811,
+          "tau_syn": 2.0117051015571965,
+          "v_th": 0.6082609298592602,
+          "t_refractory": 2.063940417869003,
+          "w_rec_scale": 18.46422402759658,
+          "input_scale": 3.703319081613318,
+          "density": 0.19628594487275397
+        },
+        "readout_alpha": 54.90597633778299
+      }
+    },
+    "evaluation": {
+      "target_start_index": 224,
+      "n_test_targets": 2176,
+      "seasonal_period": 24,
+      "mase_scale": 0.7217212837478264,
+      "seasonal_test_mae": 0.7450836932807897,
+      "n_mase_scale_terms": 7084
+    },
+    "energy": {
+      "status": "unavailable",
+      "reason": "No supported hardware energy counter available",
+      "backend": null
+    },
+    "artifact_paths": {
+      "predictions": "reports/jmlc_2026/fair/artifacts/fb433f72f311e0ce_seed42_predictions.npz"
+    },
+    "error": null
+  },
+  "timestamp": "2026-07-25T01:33:56.169287+00:00",
+  "git_hash": "1cc5b3b",
+  "python_version": "3.12.13",
+  "rc_bench_version": "0.1.0",
+  "lib_versions": {
+    "numpy": "2.3.5",
+    "scipy": "1.16.3",
+    "scikit-learn": "1.7.2",
+    "optuna": "4.9.0",
+    "reservoirpy": "0.4.1",
+    "pydantic": "2.12.5",
+    "matplotlib": "3.10.7"
+  },
+  "hardware_profile": {
+    "cpu_model": "AMD Ryzen 5 7430U with Radeon Graphics",
+    "cpu_count": 12,
+    "platform": "Linux-7.1.3-200.fc44.x86_64-x86_64-with-glibc2.43",
+    "machine": "x86_64",
+    "ram_total_gb": 15.01
+  }
+}
