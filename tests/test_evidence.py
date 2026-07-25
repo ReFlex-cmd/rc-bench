@@ -327,6 +327,20 @@ class TestModeAwareValidation:
         records = [_reservoir_record("esn", 1, mode="best_effort", hpo_budget=60)]
         assert validate_records(records, fair_budget=20) == []
 
+    def test_a_best_effort_reservoir_that_never_tuned_is_reported(self):
+        """Порог бюджета живёт под use_hpo, поэтому ячейка с use_hpo=False
+        обходила его целиком и публиковалась как «лучшее усилие», не сделав
+        ни одного trial. Это ровно то неравное сравнение, ради запрета
+        которого режим и заведён."""
+        record = _reservoir_record("esn", 1, mode="best_effort", hpo_budget=60)
+        record.spec.protocol.use_hpo = False
+        record.resolved_spec.protocol.use_hpo = False
+        record.result.config_hash = record.resolved_spec.config_hash()
+        record.result.frozen_config_hash = record.spec.config_hash()
+
+        problems = validate_records([record], fair_budget=20)
+        assert any("best_effort" in p and "did not run HPO" in p for p in problems)
+
 
 class TestRecordValidation:
     def test_clean_records_have_no_problems(self):
@@ -526,6 +540,36 @@ class TestModeAwareBundleValidation:
             p.startswith("[best_effort]") and "disagrees with the raw RunRecords" in p
             for p in problems
         )
+
+    def test_records_whose_mode_contradicts_their_directory_are_refused(self, tmp_path):
+        """Каталог режима и поле protocol.mode — два независимых утверждения о
+        том, из какой матрицы запись. Пока их никто не сверял, опечатка в
+        --output прятала best_effort-ячейки внутрь fair-контура: правило
+        равного бюджета не применялось (режим по записям — не fair), порог
+        best_effort не применялся (режим по каталогу — fair), а таблица уезжала
+        в matrix_table_best_effort.json, оставляя headline-агрегат вообще без
+        проверки."""
+        bundle = self._bundle(tmp_path)
+        records = [
+            _reservoir_record("esn", 1, mode="best_effort", hpo_budget=200),
+            _reservoir_record("esn", 24, mode="best_effort", hpo_budget=5),
+        ]
+        _write(records, bundle / "fair" / "runs")
+
+        problems = validate_bundle_modes(bundle, modes=["fair"], expected_cells=None)
+        assert any(
+            p.startswith("[fair]") and "records declare mode" in p for p in problems
+        )
+
+    def test_the_fair_budget_is_read_even_when_only_best_effort_is_checked(self, tmp_path):
+        """`--modes best_effort` не повод отключить порог: fair-прогоны лежат
+        в том же бандле, и бюджет честного сравнения из них читается."""
+        bundle = self._add_best_effort(self._bundle(tmp_path), hpo_budget=5)
+
+        problems = validate_bundle_modes(
+            bundle, modes=["best_effort"], expected_cells=4
+        )
+        assert any("smaller than the fair budget" in p for p in problems)
 
     def test_missing_fair_profiles_are_still_required(self, tmp_path):
         bundle = self._add_best_effort(self._bundle(tmp_path, profiles=False))

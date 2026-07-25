@@ -324,6 +324,14 @@ def validate_records(
                         f"{label}: best_effort budget {protocol.hpo_budget} is "
                         f"smaller than the fair budget {fair_budget}"
                     )
+            elif protocol.mode == "best_effort":
+                # Без этой ветки порог бюджета обходится целиком: ячейка без
+                # HPO не попадает ни в одну проверку и публикуется как
+                # «лучшее усилие», не сделав ни одного trial.
+                problems.append(
+                    f"{label}: best_effort reservoir cell did not run HPO, so its "
+                    "budget cannot be compared with the fair one"
+                )
 
         mean, _ = _metrics_of(record)
         for name in REQUIRED_FINITE_METRICS:
@@ -400,7 +408,7 @@ def validate_bundle_modes(
     Профиль ресурсов измеряется на fair-матрице, поэтому только она обязана
     его иметь: best-effort меняет гиперпараметры, а значит и стоимость шага,
     и переиспользовать под него fair-профиль было бы подлогом. Best-effort
-    публикуется как контур качества — это ограничение названо в README бандла.
+    публикуется как контур качества, без стоимостных осей.
 
     Бюджет fair-матрицы передаётся в проверку best-effort: режим, оплаченный
     меньшим бюджетом, чем честное сравнение, своего названия не заслуживает.
@@ -412,18 +420,21 @@ def validate_bundle_modes(
     modes = list(modes) if modes is not None else discover_modes(bundle)
     problems: List[str] = []
 
+    # Бюджет читается из fair-прогонов бандла всегда, когда они есть, а не
+    # только когда fair попал в проверяемый список: `--modes best_effort` не
+    # повод сравнивать best-effort не с чем.
     fair_budget: Optional[int] = None
-    if "fair" in modes:
-        fair_runs = bundle / "fair" / "runs"
-        if fair_runs.is_dir():
-            budgets = {
-                record.spec.protocol.hpo_budget
-                for record in load_cells(fair_runs)
-                if record.spec.protocol.use_hpo
-            }
-            # Неравные бюджеты в fair — уже нарушение, о котором доложит
-            # validate_records; здесь берётся минимум, чтобы не завышать порог.
-            fair_budget = min(budgets) if budgets else None
+    fair_runs = bundle / "fair" / "runs"
+    if fair_runs.is_dir():
+        budgets = {
+            record.spec.protocol.hpo_budget
+            for record in load_cells(fair_runs)
+            if record.spec.protocol.use_hpo
+            and record.spec.protocol.mode == "fair"
+        }
+        # Неравные бюджеты в fair — уже нарушение, о котором доложит
+        # validate_records; здесь берётся минимум, чтобы не завышать порог.
+        fair_budget = min(budgets) if budgets else None
 
     for mode in modes:
         mode_problems = validate_bundle(
@@ -432,6 +443,7 @@ def validate_bundle_modes(
             expected_cells=expected_cells,
             require_profiles=(require_profiles and mode == "fair"),
             fair_budget=fair_budget if mode != "fair" else None,
+            expected_mode=mode,
         )
         problems.extend(f"[{mode}] {problem}" for problem in mode_problems)
 
@@ -445,8 +457,15 @@ def validate_bundle(
     expected_cells: Optional[int] = 14,
     require_profiles: bool = True,
     fair_budget: Optional[int] = None,
+    expected_mode: Optional[str] = None,
 ) -> List[str]:
-    """Validate a full evidence bundle; return the list of problems found."""
+    """Validate a full evidence bundle; return the list of problems found.
+
+    ``expected_mode`` сверяет режим, объявленный записями, с режимом, под
+    именем которого они лежат. Это два независимых утверждения об одном
+    факте, и раннер пишет в каталог, выбранный оператором руками, поэтому
+    расхождение достижимо обычной опечаткой.
+    """
     bundle = Path(bundle_dir)
     problems: List[str] = []
 
@@ -469,6 +488,14 @@ def validate_bundle(
         return problems
 
     records = load_cells(runs_dir)
+    if expected_mode is not None:
+        declared = sorted({record.spec.protocol.mode for record in records})
+        if declared and declared != [expected_mode]:
+            problems.append(
+                f"{runs_subdir}: records declare mode {declared} but live under "
+                f"the {expected_mode!r} contour"
+            )
+
     problems.extend(
         validate_records(
             records, expected_cells=expected_cells, fair_budget=fair_budget
