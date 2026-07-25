@@ -10,7 +10,12 @@ runs, so a bundle whose published table has drifted from its raw RunRecords —
 or whose cells disagree on the dataset, the evaluation context or the HPO
 budget — cannot pass the release gate.
 
-``--write`` regenerates ``aggregates/matrix_table.{json,csv}`` from the raw
+Every protocol mode the bundle publishes (``fair/runs``, ``best_effort/runs``)
+is checked separately, against its own aggregate table; ``--modes`` narrows the
+set. Only the fair matrix must carry resource profiles — best-effort changes the
+hyper-parameters, so reusing the fair profile for it would be a forgery.
+
+``--write`` regenerates ``aggregates/matrix_table*.{json,csv}`` from the raw
 records first, then validates. Use it after a matrix run; never to make a
 failing check go away.
 """
@@ -25,8 +30,10 @@ sys.path.insert(0, str(REPO / "src"))
 
 from rc_bench.reporting.evidence import (  # noqa: E402
     build_rows,
+    discover_modes,
     load_cells,
     validate_bundle,
+    validate_bundle_modes,
     write_aggregates,
 )
 
@@ -36,8 +43,19 @@ def main() -> int:
     parser.add_argument("bundle", help="bundle directory, e.g. reports/jmlc_2026")
     parser.add_argument(
         "--runs-subdir",
-        default="fair/runs",
-        help="matrix RunRecord directory inside the bundle (default: fair/runs)",
+        default=None,
+        help=(
+            "validate a single RunRecord directory instead of whole modes "
+            "(e.g. fair/runs); mutually exclusive with --modes"
+        ),
+    )
+    parser.add_argument(
+        "--modes",
+        default=None,
+        help=(
+            "comma-separated protocol modes to validate (default: every mode "
+            "that has a runs/ directory in the bundle)"
+        ),
     )
     parser.add_argument(
         "--expected-cells",
@@ -57,24 +75,53 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    if args.runs_subdir is not None and args.modes is not None:
+        parser.error("--runs-subdir validates one directory; it cannot be combined with --modes")
+
     bundle = Path(args.bundle)
-    runs_dir = bundle / args.runs_subdir
+
+    # Один явный каталог — узкий режим для отладки и для бандлов со старой
+    # раскладкой: гейт при этом ничего не знает о режимах и профили требует
+    # безусловно.
+    if args.runs_subdir is not None:
+        runs_dirs = [bundle / args.runs_subdir]
+    else:
+        modes = (
+            [mode.strip() for mode in args.modes.split(",") if mode.strip()]
+            if args.modes is not None
+            else discover_modes(bundle)
+        )
+        if not modes:
+            print(f"no protocol modes found under {bundle}", file=sys.stderr)
+            return 1
+        runs_dirs = [bundle / mode / "runs" for mode in modes]
 
     if args.write:
-        if not runs_dir.is_dir():
-            print(f"cannot regenerate aggregates: missing {runs_dir}", file=sys.stderr)
-            return 1
-        rows = build_rows(load_cells(runs_dir), runs_dir)
-        written = write_aggregates(rows, bundle / "aggregates")
-        print(f"wrote {written['json']}")
-        print(f"wrote {written['csv']}")
+        for runs_dir in runs_dirs:
+            if not runs_dir.is_dir():
+                print(f"cannot regenerate aggregates: missing {runs_dir}", file=sys.stderr)
+                return 1
+            rows = build_rows(load_cells(runs_dir), runs_dir)
+            written = write_aggregates(rows, bundle / "aggregates")
+            print(f"wrote {written['json']}")
+            print(f"wrote {written['csv']}")
 
-    problems = validate_bundle(
-        bundle,
-        runs_subdir=args.runs_subdir,
-        expected_cells=args.expected_cells,
-        require_profiles=not args.no_profiles,
-    )
+    if args.runs_subdir is not None:
+        problems = validate_bundle(
+            bundle,
+            runs_subdir=args.runs_subdir,
+            expected_cells=args.expected_cells,
+            require_profiles=not args.no_profiles,
+        )
+        scope = args.runs_subdir
+    else:
+        problems = validate_bundle_modes(
+            bundle,
+            modes=modes,
+            expected_cells=args.expected_cells,
+            require_profiles=not args.no_profiles,
+        )
+        scope = ", ".join(modes)
 
     if problems:
         print(f"\nEvidence bundle {bundle}: {len(problems)} problem(s)")
@@ -82,7 +129,7 @@ def main() -> int:
             print(f"  - {problem}")
         return 1
 
-    print(f"Evidence bundle {bundle}: OK ({args.expected_cells} cells)")
+    print(f"Evidence bundle {bundle}: OK ({scope}; {args.expected_cells} cells each)")
     return 0
 
 

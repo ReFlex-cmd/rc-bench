@@ -28,9 +28,11 @@ from rc_bench.core.schema import (
 )
 from rc_bench.reporting.evidence import (
     build_rows,
+    discover_modes,
     load_cells,
     validate_aggregates,
     validate_bundle,
+    validate_bundle_modes,
     validate_records,
     write_aggregates,
 )
@@ -84,11 +86,13 @@ def _protocol(horizon: int, **overrides) -> ProtocolSpec:
     return ProtocolSpec(**base)
 
 
-def _baseline_record(model: str, horizon: int, nrmse_std: float = 0.7) -> RunRecord:
+def _baseline_record(
+    model: str, horizon: int, nrmse_std: float = 0.7, *, mode: str = "fair"
+) -> RunRecord:
     spec = ExperimentSpec(
         dataset=DatasetSpec(name="uci_household_power", length=12_000, raw_sha256=DIGEST),
         baseline=BaselineSpec(type=model),
-        protocol=_protocol(horizon, n_seeds=0, use_hpo=False),
+        protocol=_protocol(horizon, n_seeds=0, use_hpo=False, mode=mode),
         readout=ReadoutSpec(alpha_grid=ALPHA_GRID),
         seed=None,
     )
@@ -114,11 +118,14 @@ def _reservoir_record(
     *,
     n_seeds: int = 5,
     hpo_budget: int = 20,
+    mode: str = "fair",
 ) -> RunRecord:
     frozen = ExperimentSpec(
         dataset=DatasetSpec(name="uci_household_power", length=12_000, raw_sha256=DIGEST),
         reservoir=ReservoirSpec(type=model, params={}),
-        protocol=_protocol(horizon, n_seeds=n_seeds, use_hpo=True, hpo_budget=hpo_budget),
+        protocol=_protocol(
+            horizon, n_seeds=n_seeds, use_hpo=True, hpo_budget=hpo_budget, mode=mode
+        ),
         readout=ReadoutSpec(alpha_grid=ALPHA_GRID),
         seed=42,
     )
@@ -181,6 +188,41 @@ class TestAggregation:
         assert reservoir.nrmse_std_sd == pytest.approx(0.01)
         assert reservoir.evaluated_seeds == [42, 43, 44, 45, 46]
         assert reservoir.hpo_budget == 20
+
+    def test_rows_carry_the_protocol_mode(self, tmp_path):
+        runs = _write(_clean_records(), tmp_path / "runs")
+        rows = build_rows(load_cells(runs), runs)
+
+        assert {row.mode for row in rows} == {"fair"}
+        paths = write_aggregates(rows, tmp_path / "aggregates")
+        header = Path(paths["csv"]).read_text().splitlines()[0]
+        assert "mode" in header.split(",")
+
+    def test_best_effort_aggregates_go_to_their_own_file(self, tmp_path):
+        """Числа двух режимов не сводятся в одну таблицу: fair остаётся
+        headline-таблицей бандла, best-effort живёт рядом под своим именем."""
+        records = [
+            _baseline_record("persistence", 1, mode="best_effort"),
+            _reservoir_record("esn", 1, mode="best_effort", hpo_budget=60),
+        ]
+        runs = _write(records, tmp_path / "runs")
+        rows = build_rows(load_cells(runs), runs)
+        paths = write_aggregates(rows, tmp_path / "aggregates")
+
+        assert Path(paths["json"]).name == "matrix_table_best_effort.json"
+        assert Path(paths["csv"]).name == "matrix_table_best_effort.csv"
+        assert not (tmp_path / "aggregates" / "matrix_table.json").exists()
+
+    def test_writing_a_table_of_mixed_modes_is_refused(self, tmp_path):
+        records = [
+            _reservoir_record("esn", 1),
+            _reservoir_record("lsm", 1, mode="best_effort", hpo_budget=40),
+        ]
+        runs = _write(records, tmp_path / "runs")
+        rows = build_rows(load_cells(runs), runs)
+
+        with pytest.raises(ValueError, match="mixes protocol modes"):
+            write_aggregates(rows, tmp_path / "aggregates")
 
     def test_matrix_table_reports_training_time(self, tmp_path):
         """§5 описания проекта ставит время обучения первым пунктом ресурсного
@@ -248,6 +290,42 @@ class TestAggregation:
         problems = validate_aggregates(rows, paths["json"])
         assert len(problems) == 1
         assert "disagrees with the raw RunRecords" in problems[0]
+
+
+class TestModeAwareValidation:
+    def test_equal_budget_rule_applies_only_to_fair_mode(self):
+        """DEC-004 требует равного бюджета в fair. В best_effort равные бюджеты
+        означали бы, что режим не сделал того, ради чего существует."""
+        fair = [
+            _reservoir_record("esn", 1, hpo_budget=20),
+            _reservoir_record("lsm", 1, hpo_budget=40),
+        ]
+        assert any("unequal HPO budgets" in p for p in validate_records(fair))
+
+        best = [
+            _reservoir_record("esn", 1, mode="best_effort", hpo_budget=60),
+            _reservoir_record("lsm", 1, mode="best_effort", hpo_budget=40),
+        ]
+        assert not [p for p in validate_records(best) if "unequal HPO budgets" in p]
+
+    def test_mixed_modes_in_one_directory_are_rejected(self):
+        records = [
+            _reservoir_record("esn", 1),
+            _reservoir_record("lsm", 1, mode="best_effort", hpo_budget=40),
+        ]
+        problems = validate_records(records)
+        assert any("mixes protocol modes" in p for p in problems)
+
+    def test_best_effort_budget_below_the_fair_budget_is_reported(self):
+        """«Лучшее усилие», оплаченное меньшим бюджетом, чем честное сравнение,
+        — это не best-effort, а опечатка в конфиге."""
+        records = [_reservoir_record("esn", 1, mode="best_effort", hpo_budget=5)]
+        problems = validate_records(records, fair_budget=20)
+        assert any("smaller than the fair budget" in p for p in problems)
+
+    def test_best_effort_budget_at_or_above_the_fair_budget_is_clean(self):
+        records = [_reservoir_record("esn", 1, mode="best_effort", hpo_budget=60)]
+        assert validate_records(records, fair_budget=20) == []
 
 
 class TestRecordValidation:
@@ -322,31 +400,35 @@ class TestRecordValidation:
         assert any("disagree on the dataset identity" in p for p in problems)
 
 
+def _fair_bundle(tmp_path: Path, *, profiles: bool = True) -> Path:
+    bundle = tmp_path / "jmlc_2026"
+    runs = _write(_clean_records(), bundle / "fair" / "runs")
+    (bundle / "dataset_manifest.json").write_text(
+        json.dumps({"raw_file": {"sha256": DIGEST}})
+    )
+    (bundle / "hardware_profile.json").write_text(json.dumps({"cpu_model": "test"}))
+    rows = build_rows(load_cells(runs), runs)
+    write_aggregates(rows, bundle / "aggregates")
+
+    if profiles:
+        summary = [
+            {
+                "family": row.family,
+                "model": row.model,
+                "horizon": row.horizon,
+                "config_hash": row.config_hash,
+                "status": "completed",
+            }
+            for row in rows
+        ]
+        (bundle / "profiles").mkdir(parents=True, exist_ok=True)
+        (bundle / "profiles" / "summary.json").write_text(json.dumps(summary))
+    return bundle
+
+
 class TestBundleValidation:
     def _bundle(self, tmp_path: Path, *, profiles: bool = True) -> Path:
-        bundle = tmp_path / "jmlc_2026"
-        runs = _write(_clean_records(), bundle / "fair" / "runs")
-        (bundle / "dataset_manifest.json").write_text(
-            json.dumps({"raw_file": {"sha256": DIGEST}})
-        )
-        (bundle / "hardware_profile.json").write_text(json.dumps({"cpu_model": "test"}))
-        rows = build_rows(load_cells(runs), runs)
-        write_aggregates(rows, bundle / "aggregates")
-
-        if profiles:
-            summary = [
-                {
-                    "family": row.family,
-                    "model": row.model,
-                    "horizon": row.horizon,
-                    "config_hash": row.config_hash,
-                    "status": "completed",
-                }
-                for row in rows
-            ]
-            (bundle / "profiles").mkdir(parents=True, exist_ok=True)
-            (bundle / "profiles" / "summary.json").write_text(json.dumps(summary))
-        return bundle
+        return _fair_bundle(tmp_path, profiles=profiles)
 
     def test_complete_bundle_validates(self, tmp_path):
         bundle = self._bundle(tmp_path)
@@ -391,3 +473,66 @@ class TestBundleValidation:
         bundle = self._bundle(tmp_path, profiles=False)
         assert validate_bundle(bundle, expected_cells=4, require_profiles=False) == []
         assert validate_bundle(bundle, expected_cells=4) != []
+
+
+class TestModeAwareBundleValidation:
+    """Бандл с двумя контурами: fair публикует профили, best_effort — нет."""
+
+    def _bundle(self, tmp_path: Path, *, profiles: bool = True) -> Path:
+        return _fair_bundle(tmp_path, profiles=profiles)
+
+    def _add_best_effort(self, bundle: Path, *, hpo_budget: int = 60) -> Path:
+        records = [
+            _baseline_record("persistence", 1, mode="best_effort"),
+            _baseline_record("persistence", 24, mode="best_effort"),
+            _reservoir_record("esn", 1, mode="best_effort", hpo_budget=hpo_budget),
+            _reservoir_record("esn", 24, mode="best_effort", hpo_budget=hpo_budget),
+        ]
+        runs = _write(records, bundle / "best_effort" / "runs")
+        write_aggregates(build_rows(load_cells(runs), runs), bundle / "aggregates")
+        return bundle
+
+    def test_discover_modes_reports_only_the_modes_that_have_runs(self, tmp_path):
+        bundle = self._bundle(tmp_path)
+        assert discover_modes(bundle) == ["fair"]
+
+        self._add_best_effort(bundle)
+        assert discover_modes(bundle) == ["fair", "best_effort"]
+
+    def test_both_modes_validate_although_only_fair_has_profiles(self, tmp_path):
+        bundle = self._add_best_effort(self._bundle(tmp_path))
+        assert validate_bundle_modes(bundle, expected_cells=4) == []
+
+    def test_best_effort_paid_less_than_fair_is_reported_with_its_mode(self, tmp_path):
+        """Бюджет fair-контура берётся из его же прогонов, а не из аргумента, —
+        иначе гейт проверял бы best_effort против числа, которого в бандле нет."""
+        bundle = self._add_best_effort(self._bundle(tmp_path), hpo_budget=5)
+
+        problems = validate_bundle_modes(bundle, expected_cells=4)
+        assert any(
+            p.startswith("[best_effort]") and "smaller than the fair budget" in p
+            for p in problems
+        )
+
+    def test_a_drifted_best_effort_table_is_reported(self, tmp_path):
+        bundle = self._add_best_effort(self._bundle(tmp_path))
+        path = bundle / "aggregates" / "matrix_table_best_effort.json"
+        table = json.loads(path.read_text())
+        table[0]["nrmse_std"] = 0.123
+        path.write_text(json.dumps(table))
+
+        problems = validate_bundle_modes(bundle, expected_cells=4)
+        assert any(
+            p.startswith("[best_effort]") and "disagrees with the raw RunRecords" in p
+            for p in problems
+        )
+
+    def test_missing_fair_profiles_are_still_required(self, tmp_path):
+        bundle = self._add_best_effort(self._bundle(tmp_path, profiles=False))
+
+        problems = validate_bundle_modes(bundle, expected_cells=4)
+        assert any(
+            p.startswith("[fair]") and "missing resource-profile summary" in p
+            for p in problems
+        )
+        assert validate_bundle_modes(bundle, expected_cells=4, require_profiles=False) == []

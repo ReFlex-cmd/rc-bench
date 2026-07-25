@@ -3,6 +3,7 @@
     "family": "baseline",
     "model": "persistence",
     "horizon": 1,
+    "mode": "fair",
     "deterministic": true,
     "n_seeds": 0,
     "evaluated_seeds": [],
@@ -31,6 +32,7 @@
     "family": "baseline",
     "model": "ridge_ar",
     "horizon": 1,
+    "mode": "fair",
     "deterministic": true,
     "n_seeds": 0,
     "evaluated_seeds": [],
@@ -59,6 +61,7 @@
     "family": "baseline",
     "model": "seasonal_persistence",
     "horizon": 1,
+    "mode": "fair",
     "deterministic": true,
     "n_seeds": 0,
     "evaluated_seeds": [],
@@ -87,6 +90,7 @@
     "family": "reservoir",
     "model": "esn",
     "horizon": 1,
+    "mode": "fair",
     "deterministic": false,
     "n_seeds": 5,
     "evaluated_seeds": [
@@ -121,6 +125,7 @@
     "family": "reservoir",
     "model": "leaky_esn",
     "horizon": 1,
+    "mode": "fair",
     "deterministic": false,
     "n_seeds": 5,
     "evaluated_seeds": [
@@ -155,6 +160,7 @@
     "family": "reservoir",
     "model": "logistic",
     "horizon": 1,
+    "mode": "fair",
     "deterministic": false,
     "n_seeds": 5,
     "evaluated_seeds": [
@@ -189,6 +195,7 @@
     "family": "reservoir",
     "model": "lsm",
     "horizon": 1,
+    "mode": "fair",
     "deterministic": false,
     "n_seeds": 5,
     "evaluated_seeds": [
@@ -223,6 +230,7 @@
     "family": "baseline",
     "model": "persistence",
     "horizon": 24,
+    "mode": "fair",
     "deterministic": true,
     "n_seeds": 0,
     "evaluated_seeds": [],
@@ -251,6 +259,7 @@
     "family": "baseline",
     "model": "ridge_ar",
     "horizon": 24,
+    "mode": "fair",
     "deterministic": true,
     "n_seeds": 0,
     "evaluated_seeds": [],
@@ -279,6 +288,7 @@
     "family": "baseline",
     "model": "seasonal_persistence",
     "horizon": 24,
+    "mode": "fair",
     "deterministic": true,
     "n_seeds": 0,
     "evaluated_seeds": [],
@@ -307,6 +317,7 @@
     "family": "reservoir",
     "model": "esn",
     "horizon": 24,
+    "mode": "fair",
     "deterministic": false,
     "n_seeds": 5,
     "evaluated_seeds": [
@@ -341,6 +352,7 @@
     "family": "reservoir",
     "model": "leaky_esn",
     "horizon": 24,
+    "mode": "fair",
     "deterministic": false,
     "n_seeds": 5,
     "evaluated_seeds": [
@@ -375,6 +387,7 @@
     "family": "reservoir",
     "model": "logistic",
     "horizon": 24,
+    "mode": "fair",
     "deterministic": false,
     "n_seeds": 5,
     "evaluated_seeds": [
@@ -409,6 +422,7 @@
     "family": "reservoir",
     "model": "lsm",
     "horizon": 24,
+    "mode": "fair",
     "deterministic": false,
     "n_seeds": 5,
     "evaluated_seeds": [

@@ -46,6 +46,10 @@ class CellRow:
     family: str
     model: str
     horizon: int
+    # Режим протокола, в котором получена ячейка (fair | best_effort). Он
+    # живёт в самой строке таблицы, а не только в имени каталога: имя файла
+    # можно переименовать, строку — нет.
+    mode: str
     deterministic: bool
     n_seeds: int
     evaluated_seeds: List[int]
@@ -124,6 +128,7 @@ def build_rows(records: Sequence[RunRecord], runs_dir: str | Path) -> List[CellR
                 family=family,
                 model=model,
                 horizon=horizon,
+                mode=record.spec.protocol.mode,
                 deterministic=bool(result.deterministic),
                 n_seeds=len(result.evaluated_seeds or []),
                 evaluated_seeds=list(result.evaluated_seeds or []),
@@ -167,12 +172,36 @@ def _bundle_relative(runs_dir: Path, record: RunRecord, family: str, model: str,
         return path.name
 
 
+def aggregate_stem(mode: str) -> str:
+    """Имя файла агрегата для режима.
+
+    ``fair`` — headline-таблица бандла, поэтому сохраняет историческое имя
+    ``matrix_table``; остальные режимы получают собственный файл. Одна таблица
+    на два режима означала бы сравнение моделей, оценённых по разным правилам.
+    """
+    return "matrix_table" if mode == "fair" else f"matrix_table_{mode}"
+
+
 def write_aggregates(rows: Sequence[CellRow], out_dir: str | Path) -> Dict[str, str]:
-    """Write the aggregate table as JSON and CSV; return the written paths."""
+    """Write the aggregate table as JSON and CSV; return the written paths.
+
+    Имя файла выводится из режима самих строк, а не задаётся параметром:
+    иначе таблицу best-effort можно было бы записать под именем fair, и
+    расхождение обнаружилось бы только на защите.
+    """
+    modes = {row.mode for row in rows}
+    if len(modes) > 1:
+        raise ValueError(
+            f"table mixes protocol modes {sorted(modes)}; fair and best_effort "
+            "results are published as separate tables"
+        )
+    mode = next(iter(modes)) if modes else "fair"
+
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    json_path = out_dir / "matrix_table.json"
-    csv_path = out_dir / "matrix_table.csv"
+    stem = aggregate_stem(mode)
+    json_path = out_dir / f"{stem}.json"
+    csv_path = out_dir / f"{stem}.csv"
 
     payload = [row.to_dict() for row in rows]
     json_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
@@ -203,8 +232,20 @@ def _finite(value: Optional[float]) -> bool:
     return value is not None and math.isfinite(value)
 
 
-def validate_records(records: Sequence[RunRecord], *, expected_cells: Optional[int] = None) -> List[str]:
-    """Return every protocol violation found in the raw records (empty = clean)."""
+def validate_records(
+    records: Sequence[RunRecord],
+    *,
+    expected_cells: Optional[int] = None,
+    fair_budget: Optional[int] = None,
+) -> List[str]:
+    """Return every protocol violation found in the raw records (empty = clean).
+
+    ``fair_budget`` — бюджет HPO соответствующей fair-матрицы. Передаётся при
+    проверке best-effort прогона: «лучшее усилие», оплаченное меньшим
+    бюджетом, чем честное сравнение, — это не best-effort, а опечатка в
+    конфиге, и опубликованный вывод «при индивидуальной настройке architecture
+    X достигает Y» был бы получен в более бедных условиях, чем заявлено.
+    """
     problems: List[str] = []
     if expected_cells is not None and len(records) != expected_cells:
         problems.append(f"expected {expected_cells} cells, found {len(records)}")
@@ -218,6 +259,7 @@ def validate_records(records: Sequence[RunRecord], *, expected_cells: Optional[i
     per_horizon_evaluation: Dict[int, List[Tuple[str, Any]]] = {}
     protocol_invariants = set()
     hpo_budgets = set()
+    modes = set()
 
     for record, (family, model, horizon) in zip(records, identities):
         label = f"{family}/{model} h{horizon}"
@@ -238,6 +280,7 @@ def validate_records(records: Sequence[RunRecord], *, expected_cells: Optional[i
             problems.append(f"{label}: dataset.raw_sha256 is not pinned")
 
         protocol = record.spec.protocol
+        modes.add(protocol.mode)
         protocol_invariants.add(
             (
                 protocol.washout,
@@ -272,6 +315,15 @@ def validate_records(records: Sequence[RunRecord], *, expected_cells: Optional[i
                 )
             if protocol.use_hpo:
                 hpo_budgets.add(protocol.hpo_budget)
+                if (
+                    protocol.mode == "best_effort"
+                    and fair_budget is not None
+                    and protocol.hpo_budget < fair_budget
+                ):
+                    problems.append(
+                        f"{label}: best_effort budget {protocol.hpo_budget} is "
+                        f"smaller than the fair budget {fair_budget}"
+                    )
 
         mean, _ = _metrics_of(record)
         for name in REQUIRED_FINITE_METRICS:
@@ -285,7 +337,15 @@ def validate_records(records: Sequence[RunRecord], *, expected_cells: Optional[i
             "cells disagree on shared protocol invariants "
             f"(washout/train_frac/val_frac/mode/seasonal_period): {sorted(protocol_invariants)}"
         )
-    if len(hpo_budgets) > 1:
+    if len(modes) > 1:
+        problems.append(
+            f"bundle directory mixes protocol modes {sorted(modes)}; fair and "
+            "best_effort matrices are published side by side, never merged"
+        )
+    # Равенство бюджетов — определение fair-режима (DEC-004). В best_effort
+    # равные бюджеты означали бы, что режим не сделал того, ради чего он есть,
+    # поэтому проверять их на равенство здесь было бы прямо неверно.
+    if modes == {"fair"} and len(hpo_budgets) > 1:
         problems.append(
             f"reservoir models were given unequal HPO budgets {sorted(hpo_budgets)} (DEC-004)"
         )
@@ -318,12 +378,73 @@ def validate_aggregates(rows: Sequence[CellRow], aggregates_path: str | Path) ->
     ]
 
 
+def discover_modes(bundle_dir: str | Path) -> List[str]:
+    """Режимы, для которых в бандле есть прогоны, в порядке публикации."""
+    bundle = Path(bundle_dir)
+    return [
+        mode
+        for mode in ("fair", "best_effort")
+        if (bundle / mode / "runs").is_dir()
+    ]
+
+
+def validate_bundle_modes(
+    bundle_dir: str | Path,
+    *,
+    modes: Optional[Sequence[str]] = None,
+    expected_cells: Optional[int] = 14,
+    require_profiles: bool = True,
+) -> List[str]:
+    """Проверить каждый режим бандла отдельно, своим каталогом и агрегатом.
+
+    Профиль ресурсов измеряется на fair-матрице, поэтому только она обязана
+    его иметь: best-effort меняет гиперпараметры, а значит и стоимость шага,
+    и переиспользовать под него fair-профиль было бы подлогом. Best-effort
+    публикуется как контур качества — это ограничение названо в README бандла.
+
+    Бюджет fair-матрицы передаётся в проверку best-effort: режим, оплаченный
+    меньшим бюджетом, чем честное сравнение, своего названия не заслуживает.
+
+    ``require_profiles=False`` снимает проверку профилей и с fair — это форма
+    для незавершённого бандла, релизный гейт её не использует.
+    """
+    bundle = Path(bundle_dir)
+    modes = list(modes) if modes is not None else discover_modes(bundle)
+    problems: List[str] = []
+
+    fair_budget: Optional[int] = None
+    if "fair" in modes:
+        fair_runs = bundle / "fair" / "runs"
+        if fair_runs.is_dir():
+            budgets = {
+                record.spec.protocol.hpo_budget
+                for record in load_cells(fair_runs)
+                if record.spec.protocol.use_hpo
+            }
+            # Неравные бюджеты в fair — уже нарушение, о котором доложит
+            # validate_records; здесь берётся минимум, чтобы не завышать порог.
+            fair_budget = min(budgets) if budgets else None
+
+    for mode in modes:
+        mode_problems = validate_bundle(
+            bundle,
+            runs_subdir=f"{mode}/runs",
+            expected_cells=expected_cells,
+            require_profiles=(require_profiles and mode == "fair"),
+            fair_budget=fair_budget if mode != "fair" else None,
+        )
+        problems.extend(f"[{mode}] {problem}" for problem in mode_problems)
+
+    return problems
+
+
 def validate_bundle(
     bundle_dir: str | Path,
     *,
     runs_subdir: str = "fair/runs",
     expected_cells: Optional[int] = 14,
     require_profiles: bool = True,
+    fair_budget: Optional[int] = None,
 ) -> List[str]:
     """Validate a full evidence bundle; return the list of problems found."""
     bundle = Path(bundle_dir)
@@ -348,7 +469,11 @@ def validate_bundle(
         return problems
 
     records = load_cells(runs_dir)
-    problems.extend(validate_records(records, expected_cells=expected_cells))
+    problems.extend(
+        validate_records(
+            records, expected_cells=expected_cells, fair_budget=fair_budget
+        )
+    )
 
     if manifest_digest is not None:
         for record in records:
@@ -361,7 +486,8 @@ def validate_bundle(
                 )
 
     rows = build_rows(records, runs_dir)
-    problems.extend(validate_aggregates(rows, bundle / "aggregates" / "matrix_table.json"))
+    stem = aggregate_stem(rows[0].mode) if rows else "matrix_table"
+    problems.extend(validate_aggregates(rows, bundle / "aggregates" / f"{stem}.json"))
 
     if require_profiles:
         problems.extend(_validate_profiles(bundle, rows))
