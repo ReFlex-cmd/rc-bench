@@ -219,6 +219,27 @@ Ridge AR составляет 1.7 % (h=1) и 3.5 % (h=24). Разброс по s
 poetry run python scripts/validate_evidence.py reports/jmlc_2026
 ```
 
+### Демонстрация за одну команду
+
+```bash
+# 1. Данные: скачиваются один раз и сверяются по SHA-256 с манифестом (~20 МБ архив)
+poetry run python scripts/download_jmlc_data.py
+
+# 2. Один прогон по тому же протоколу, что и матрица: ESN, h=1, 1 seed, без HPO (~13 с)
+poetry run rcbench run configs/jmlc/demo.yaml \
+    --output reports/demo/run.json --artifacts reports/demo/artifacts
+```
+
+Вывод показывает NRMSE_std, MASE и MAE skill — те же метрики, что и в таблице выше.
+Числа демо отличаются от опубликованных намеренно: одна фиксированная конфигурация без HPO
+и без усреднения по seeds — это демонстрация пути `данные → split → модель → метрики →
+RunRecord`, а не оценка.
+
+Если данных под рукой нет, готовые артефакты уже лежат в репозитории:
+`reports/jmlc_2026/fair/runs/*.json` (полные RunRecord) и
+`reports/jmlc_2026/fair/artifacts/*.npz` (предсказания и test-таргеты) — по ним
+воспроизводятся все опубликованные числа без единого прогона.
+
 ## Результаты бенчмарков на синтетических рядах
 
 Унифицированный протокол: HPO budget **100 trials** (P0/P1) или 50 (P2/P3); **10 seeds**

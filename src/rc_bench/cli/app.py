@@ -60,6 +60,11 @@ def _print_result(result_spec) -> None:
         for field in ("rmse", "nrmse_range", "nrmse_std", "nrmse_var",
                       "mae", "mse", "val_nrmse_range"):
             t.add_row(field, f"{getattr(m, field):.6f} ± {getattr(s, field):.6f}")
+        # Baseline-relative metrics only exist when a seasonal period was given
+        # (DEC-013); a row of dashes would read as "measured, and it is nothing".
+        for field in ("mase", "mae_skill"):
+            if getattr(m, field, None) is not None:
+                t.add_row(field, f"{getattr(m, field):.6f} ± {getattr(s, field):.6f}")
         t.add_row("prediction_horizon",
                   f"{m.prediction_horizon:.1f} ± {s.prediction_horizon:.1f}")
         t.add_row("train_time (s)",
@@ -77,6 +82,10 @@ def _print_result(result_spec) -> None:
         t.add_row("nrmse_var",          f"{metrics.nrmse_var:.6f}")
         t.add_row("mae",                f"{metrics.mae:.6f}")
         t.add_row("mse",                f"{metrics.mse:.6f}")
+        if metrics.mase is not None:
+            t.add_row("mase",           f"{metrics.mase:.6f}")
+        if metrics.mae_skill is not None:
+            t.add_row("mae_skill",      f"{metrics.mae_skill:.6f}")
         t.add_row("prediction_horizon", str(metrics.prediction_horizon))
         t.add_row("val_nrmse_range",    f"{metrics.val_nrmse_range:.6f}")
         t.add_row("train_time (s)",     f"{metrics.train_time:.4f}")

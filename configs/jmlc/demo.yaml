@@ -1,0 +1,30 @@
+# Demo spec (DEMO-001): the shortest real-data run that still obeys the JMLC
+# protocol. One ESN, horizon 1, one seed, no HPO — it exercises the same path as
+# the fair matrix (causal split, washout 200, fixed_horizon, NRMSE_std selection,
+# MASE/MAE-skill against seasonal persistence) in a few seconds.
+#
+#   poetry run rcbench run configs/jmlc/demo.yaml \
+#       --output reports/demo/run.json --artifacts reports/demo/artifacts
+#
+# The published numbers come from configs/jmlc/fair.yaml, never from this file:
+# one seed and a fixed configuration are a demonstration, not an evaluation.
+dataset:
+  name: uci_household_power
+  length: 12000
+  raw_sha256: 4259c9d7ece5dbee9ab8d53682baac68d791c864f0f64a52b4043cb3b90894b7
+reservoir:
+  type: esn
+  params: {}
+protocol:
+  washout: 200
+  train_frac: 0.6
+  val_frac: 0.2
+  forecasting_mode: fixed_horizon
+  horizon: 1
+  use_hpo: false
+  n_seeds: 1
+  selection_metric: nrmse_std
+  seasonal_period: 24
+readout:
+  alpha_grid: [0.001, 0.01, 0.1, 1.0, 10.0]
+seed: 42

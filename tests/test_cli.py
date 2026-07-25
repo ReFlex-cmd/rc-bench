@@ -116,6 +116,33 @@ class TestRun:
         assert "nrmse_range" in result.output
         assert "prediction_horizon" in result.output
 
+    def test_baseline_relative_metrics_are_shown_when_computed(self, tmp_path):
+        """The demo has to print the metrics the defence actually argues from."""
+        spec = json.loads(json.dumps(_ESN_SPEC))
+        spec["protocol"].update(
+            # washout must exceed the seasonal lag, otherwise the first target
+            # has no causal 24-step history and the protocol refuses the run.
+            washout=30,
+            forecasting_mode="fixed_horizon",
+            horizon=1,
+            seasonal_period=24,
+            selection_metric="nrmse_std",
+        )
+        p = tmp_path / "seasonal_spec.json"
+        p.write_text(json.dumps(spec))
+
+        result = runner.invoke(app, ["run", str(p)])
+        assert result.exit_code == 0, result.output
+        assert "mase" in result.output
+        assert "mae_skill" in result.output
+
+    def test_baseline_relative_metrics_are_absent_when_not_computed(self, tmp_path):
+        """No seasonal period means no MASE — an empty row would imply otherwise."""
+        p = self._spec_file(tmp_path)
+        result = runner.invoke(app, ["run", str(p)])
+        assert "mase" not in result.output
+        assert "mae_skill" not in result.output
+
     def test_output_file_written(self, tmp_path):
         p = self._spec_file(tmp_path)
         out = tmp_path / "result.json"
