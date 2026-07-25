@@ -66,6 +66,14 @@ class CellRow:
     mae_skill: Optional[float]
     mae_skill_sd: Optional[float]
     val_nrmse_std: Optional[float]
+    # Время обучения — первый пункт ресурсного профиля в описании проекта.
+    # Оно измеряется в каждом прогоне, но до этой колонки не публиковалось,
+    # то есть заявленный пункт нельзя было проверить по бандлу. Стоимость
+    # ВЫВОДА живёт не здесь, а в profiles/summary.json: смешивать обучение с
+    # инференсом в одной колонке — ровно та ошибка, ради которой профиль
+    # выделен в отдельный проход.
+    train_time_s: float
+    train_time_s_sd: Optional[float]
     run_record: str
 
     def to_dict(self) -> Dict[str, Any]:
@@ -140,6 +148,8 @@ def build_rows(records: Sequence[RunRecord], runs_dir: str | Path) -> List[CellR
                 mae_skill=mean.mae_skill,
                 mae_skill_sd=std.mae_skill if std is not None else None,
                 val_nrmse_std=mean.val_nrmse_std,
+                train_time_s=mean.train_time,
+                train_time_s_sd=std.train_time if std is not None else None,
                 run_record=_bundle_relative(runs_dir, record, family, model, horizon),
             )
         )

@@ -182,6 +182,24 @@ class TestAggregation:
         assert reservoir.evaluated_seeds == [42, 43, 44, 45, 46]
         assert reservoir.hpo_budget == 20
 
+    def test_matrix_table_reports_training_time(self, tmp_path):
+        """§5 описания проекта ставит время обучения первым пунктом ресурсного
+        профиля. Оно измеряется в каждом прогоне и лежит в MetricsResult, но до
+        опубликованной таблицы не доходило — то есть заявленный пункт профиля
+        нельзя было проверить по бандлу."""
+        runs = _write(_clean_records(), tmp_path / "runs")
+        rows = build_rows(load_cells(runs), runs)
+
+        reservoir = next(r for r in rows if r.family == "reservoir" and r.horizon == 1)
+        baseline = next(r for r in rows if r.family == "baseline" and r.horizon == 1)
+
+        assert reservoir.train_time_s == pytest.approx(1.0)
+        assert reservoir.train_time_s_sd == pytest.approx(0.01)
+        assert baseline.train_time_s == pytest.approx(1.0)
+        # Детерминированный baseline запускается однократно: разброса нет, и
+        # ноль на его месте читался бы как измеренное отсутствие разброса.
+        assert baseline.train_time_s_sd is None
+
     def test_reservoir_point_estimate_is_the_across_seed_mean(self, tmp_path):
         runs = _write([_reservoir_record("esn", 1, 0.60)], tmp_path / "runs")
         (row,) = build_rows(load_cells(runs), runs)
