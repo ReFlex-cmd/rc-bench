@@ -155,3 +155,20 @@ def test_measure_energy_reports_unmet_window_when_step_cap_reached(tmp_path):
     assert result["window_target_met"] is False
     assert result["n_steps"] == 50
     assert result["duration_s"] < result["min_duration_s"]
+
+
+def test_measure_energy_refuses_a_cap_below_its_own_minimum(tmp_path):
+    """`window_target_met` говорит только о длительности окна. Потолок ниже
+    min_steps молча урезал бы вторую половину инварианта, и запись вышла бы
+    с status='measured' без единого признака усечения."""
+    root = _fake_rapl(tmp_path)
+
+    with pytest.raises(ValueError, match="below min_steps"):
+        energy_mod.measure_energy(
+            lambda: None,
+            p50_ns=1e5,
+            min_duration_s=0.05,
+            min_steps=1000,
+            root=root,
+            max_steps=500,
+        )

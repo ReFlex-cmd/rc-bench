@@ -83,10 +83,13 @@ def read_domain_uj(domain: RaplDomain) -> int:
 def counter_delta_uj(*, start_uj: int, end_uj: int, domain: RaplDomain) -> int:
     """Разность с учётом кольцевого переполнения счётчика.
 
-    ``max_energy_range_uj`` — это модуль переполнения (счётчик пробегает
-    значения ``0 .. max_range_uj - 1`` и затем сбрасывается в 0), а не
-    включительный максимум, поэтому при переполнении полный цикл равен
-    ``max_range_uj`` без поправки на единицу.
+    По документации powercap ``max_energy_range_uj`` — максимальное значение,
+    которое счётчик может показать, то есть включительный максимум: на этой
+    машине это 65532610987 мкДж = 0xFFFFFFFF × 15.258 мкДж (квант домена).
+    Настоящий период переполнения на один квант больше, но квант на этом
+    уровне неизвестен, поэтому ``max_range_uj`` берётся как его нижняя
+    оценка: недоучёт составляет один квант на переполнение (~1.5e-11 от
+    полного цикла) и не может превысить разрешение самого счётчика.
     """
     if end_uj >= start_uj:
         return end_uj - start_uj
@@ -164,21 +167,32 @@ def _run_step_window(
 
     Возвращает ``(steps_run, duration_s, window_target_met)``.
     """
-    steps_run = min(initial_steps, max_steps)
+    if initial_steps < 1:
+        raise ValueError(f"initial_steps must be >= 1, got {initial_steps}")
+    if max_steps < initial_steps:
+        # Иначе вторая половина инварианта («не меньше min_steps шагов») была
+        # бы отброшена молча, а window_target_met следит только за временем и
+        # такую усечённость не показал бы.
+        raise ValueError(
+            f"max_steps={max_steps} is below the requested {initial_steps} steps; "
+            "the step-count half of the measurement window cannot be met"
+        )
+    steps_run = initial_steps
     t0 = time.perf_counter_ns()
     for _ in range(steps_run):
         step_fn()
     duration_s = (time.perf_counter_ns() - t0) / 1e9
 
     while duration_s < min_duration_s and steps_run < max_steps:
-        observed_step_s = duration_s / steps_run if steps_run > 0 else 0.0
+        observed_step_s = duration_s / steps_run
         if observed_step_s > 0:
             remaining_steps = int((min_duration_s - duration_s) / observed_step_s) + 1
         else:
-            # Часы ещё не отличили прошедшее время от нуля (шаг свободнее
-            # разрешения таймера) — берём фиксированный кусок вместо того,
-            # чтобы бесконечно доверять недоказанной оценке.
-            remaining_steps = max_steps - steps_run
+            # Часы ещё не отличили прошедшее время от нуля (шаг быстрее
+            # разрешения таймера) — удваиваем окно вместо того, чтобы делить
+            # на ноль или сразу выбирать весь остаток бюджета: следующая
+            # итерация уже получит измеримую оценку.
+            remaining_steps = steps_run
         extra_steps = max(1, min(remaining_steps, max_steps - steps_run))
         for _ in range(extra_steps):
             step_fn()
@@ -204,11 +218,25 @@ def measure_energy(
     обновления счётчика. Она же используется для energy-delay product.
     Фактическая длительность окна проверяется после прогона и при
     необходимости расширяется — см. :func:`_run_step_window`.
+
+    Raises:
+        ValueError: если ``max_steps`` не даёт набрать даже ``min_steps``.
+            ``window_target_met`` следит только за длительностью окна, поэтому
+            нарушенную половину инварианта («не меньше ``min_steps`` шагов»)
+            иначе никто бы не заметил.
     """
+    if max_steps < min_steps:
+        raise ValueError(
+            f"max_steps={max_steps} is below min_steps={min_steps}: the window "
+            "cannot satisfy the step-count half of its own invariant"
+        )
+
     status, domains = _discover_available(root)
     if status["status"] != "available":
         return status
 
+    # Оценка по p50 может превысить потолок — это законно и отражается в
+    # window_target_met; ниже min_steps опуститься нельзя (проверено выше).
     n_steps = max(int(min_steps), int((min_duration_s * 1e9) // max(p50_ns, 1.0)))
     n_steps = min(n_steps, max_steps)
 
@@ -254,7 +282,8 @@ def measure_energy(
         # EDP на один вывод: (net энергия одного шага, Дж) × (p50 задержка, с).
         "energy_delay_product_j_s": (net_per_inference_mj / 1e3) * (p50_ns / 1e9),
         "note": (
-            "package-domain energy; idle baseline of equal duration subtracted "
-            "for the net values. Not a per-model isolated measurement."
+            "package-domain energy; an idle baseline of min_duration_s, scaled "
+            "to the measurement window, is subtracted for the net values. "
+            "Not a per-model isolated measurement."
         ),
     }
