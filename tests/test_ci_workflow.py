@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import yaml
@@ -48,3 +49,24 @@ def test_unit_workflow_installs_lock_and_runs_quick_gate() -> None:
         for command in commands
     )
     assert "bash scripts/verify.sh quick" in commands
+
+
+VERIFY_SCRIPT = Path(__file__).parents[1] / "scripts" / "verify.sh"
+
+
+def test_release_gate_checks_do_not_depend_on_an_optional_tool() -> None:
+    """A missing search tool must not turn a gate check into a silent pass.
+
+    `if rg ...; then fail; fi` reports "no match" when rg is absent — and rg is
+    absent on a plain Fedora/Ubuntu box and inside CI containers (on this
+    machine it existed only as a shell function, invisible to the script). The
+    sanitization and raw-dataset checks are the two things standing between the
+    bundle and a published hostname or a 133 MB dataset in Git, so they use the
+    tool every POSIX system has.
+    """
+    script = VERIFY_SCRIPT.read_text()
+
+    assert re.search(r"(?m)^\s*(if\s+)?rg\b", script) is None, (
+        "verify.sh invokes rg; use grep so a missing tool cannot pass the gate"
+    )
+    assert "grep -rEn" in script

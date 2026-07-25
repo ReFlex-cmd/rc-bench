@@ -57,18 +57,21 @@ run_release() {
 
   poetry run python scripts/validate_evidence.py reports/jmlc_2026
 
-  if rg -n \
-    --glob 'reports/jmlc_2026/**' \
-    --glob '*.json' \
-    --glob '*.md' \
-    '("hostname"\s*:|[A-Za-z]:\\\\Users\\\\|/home/[^ /]+/|/Users/[^ /]+/)' \
+  # grep, not rg: a missing tool makes `if <tool> ...` evaluate false, which
+  # turns both checks below into silent passes. These two are what keep a
+  # hostname or the 133 MB raw dataset out of a published bundle, so they use
+  # the tool every POSIX system ships.
+  if grep -rEn \
+    --include='*.json' \
+    --include='*.md' \
+    '("hostname"[[:space:]]*:|[A-Za-z]:\\Users\\|/home/[^ /]+/|/Users/[^ /]+/)' \
     reports/jmlc_2026; then
     echo "Potential local identifier found in evidence bundle" >&2
     exit 1
   fi
 
-  if git ls-files | rg \
-    '(^|/)(household_power_consumption|individual_household).*' >/dev/null; then
+  if git ls-files | grep -Eq \
+    '(^|/)(household_power_consumption|individual_household).*'; then
     echo "Raw UCI dataset appears to be tracked by Git" >&2
     exit 1
   fi
