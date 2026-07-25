@@ -22,6 +22,18 @@ _DEFAULT_JMLC_RAW_PATH = (
     / "household_power_consumption.txt"
 )
 
+
+def resolve_uci_raw_path() -> Path:
+    """Path of the raw UCI file this process will read.
+
+    ``RC_BENCH_UCI_RAW_PATH`` overrides the in-repo default, so callers that
+    need to verify the bytes (see ``runners.jmlc_matrix``) must resolve the
+    path the same way the loader does rather than assuming the default.
+    """
+    configured_path = os.environ.get(JMLC_RAW_DATA_ENV)
+    return Path(configured_path) if configured_path else _DEFAULT_JMLC_RAW_PATH
+
+
 DATASET_CATALOG: Dict[str, Dict[str, Any]] = {
     "narma10": {
         "description": "Non-linear Auto-Regressive Moving Average, order 10",
@@ -217,8 +229,7 @@ def get_data_for_experiment(
                 f"val_frac={VALIDATION_FRACTION}"
             )
 
-        configured_path = os.environ.get(JMLC_RAW_DATA_ENV)
-        raw_path = Path(configured_path) if configured_path else _DEFAULT_JMLC_RAW_PATH
+        raw_path = resolve_uci_raw_path()
         splits = split_hourly_series(
             load_uci_household_power_series(raw_path)
         )

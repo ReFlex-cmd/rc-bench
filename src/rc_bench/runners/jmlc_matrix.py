@@ -12,6 +12,7 @@ while `run_matrix` expands the full grid.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 import traceback
@@ -20,7 +21,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
-from rc_bench.core.data_provider import get_data_for_experiment
+from rc_bench.core.data_provider import (
+    UCI_HOUSEHOLD_POWER_DATASET,
+    get_data_for_experiment,
+    resolve_uci_raw_path,
+)
 from rc_bench.core.schema import (
     BaselineSpec,
     DatasetSpec,
@@ -50,6 +55,37 @@ def load_template(config_path: str | Path) -> Dict[str, Any]:
         raise ValueError("matrix config must be a mapping (a single ExperimentSpec)")
     ExperimentSpec.model_validate(raw)  # fail fast on an invalid template
     return raw
+
+
+def verify_pinned_raw_digest(template: Dict[str, Any]) -> None:
+    """Fail fast unless the raw file on disk hashes to the pinned digest.
+
+    ``dataset.raw_sha256`` is copied into every cell's frozen and resolved spec,
+    so without this check the published RunRecords would attribute results to
+    bytes nobody verified. Templates that pin nothing are left alone; a pinned
+    digest turns into an error the moment it disagrees with the file the loader
+    will actually read.
+    """
+    dataset = template.get("dataset", {})
+    pinned = dataset.get("raw_sha256")
+    if pinned is None or dataset.get("name") != UCI_HOUSEHOLD_POWER_DATASET:
+        return
+
+    raw_path = resolve_uci_raw_path()
+    try:
+        digest = hashlib.sha256()
+        with raw_path.open("rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError as exc:
+        raise ValueError(f"cannot read the raw dataset at {raw_path}: {exc}") from exc
+
+    actual = digest.hexdigest()
+    if actual != pinned:
+        raise ValueError(
+            f"raw_sha256 mismatch for {raw_path}: config pins {pinned}, "
+            f"file hashes to {actual}"
+        )
 
 
 def build_cell_spec(
@@ -112,6 +148,7 @@ def run_matrix(
     Failed cells are recorded (never dropped) so the report stays honest.
     """
     template = load_template(config_path)
+    verify_pinned_raw_digest(template)
     output_dir = Path(output_dir)
     runs_dir = output_dir / "runs"
     runs_dir.mkdir(parents=True, exist_ok=True)

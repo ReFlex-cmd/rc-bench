@@ -142,12 +142,14 @@ def run_pipeline(
 
     if n_seeds > 1:
         artifact_paths: Dict[str, str] = {}
-        representative_callback = None
+        # The evaluation context is a property of the data and protocol, so it
+        # is identical across seeds; the first seed's copy represents the run.
+        first_seed: Dict[str, Any] = {}
 
-        if save_predictions:
-            assert artifact_dir is not None
-
-            def save_representative(seed: int, result: Dict[str, Any]) -> None:
+        def observe_first_seed(seed: int, result: Dict[str, Any]) -> None:
+            first_seed["evaluation"] = result.get("evaluation")
+            if save_predictions:
+                assert artifact_dir is not None
                 artifact_paths["predictions"] = _save_predictions_artifact(
                     artifact_dir,
                     resolved_config_hash,
@@ -155,13 +157,11 @@ def run_pipeline(
                     result,
                 )
 
-            representative_callback = save_representative
-
         multi_seed_result = run_multi_seed(
             data,
             resolved_spec,
             n_seeds,
-            representative_callback=representative_callback,
+            representative_callback=observe_first_seed,
         )
         return ResultSpec(
             status="completed",
@@ -177,6 +177,7 @@ def run_pipeline(
             deterministic=False,
             evaluated_seeds=list(multi_seed_result.seeds),
             selection=_reservoir_selection(resolved_spec, hpo_best_params),
+            evaluation=first_seed.get("evaluation"),
             artifact_paths=artifact_paths,
         )
     else:
@@ -213,5 +214,6 @@ def run_pipeline(
             deterministic=False,
             evaluated_seeds=[resolved_spec.seed],
             selection=_reservoir_selection(resolved_spec, hpo_best_params),
+            evaluation=result["evaluation"],
             artifact_paths=artifact_paths,
         )

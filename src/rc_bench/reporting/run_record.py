@@ -2,9 +2,13 @@
 
 Per ТЗ §3 / Wringe et al. 2024 criterion 6 ("полное логирование"):
 - ``git_hash`` — short HEAD commit (subprocess git rev-parse).
-- ``hostname``, ``python_version``, ``rc_bench_version`` — identification.
+- ``python_version``, ``rc_bench_version`` — identification.
 - ``lib_versions`` — versions of all major scientific dependencies.
 - ``hardware_profile`` — CPU model, core counts, total RAM.
+
+DEC-008: raw RunRecords are themselves published evidence, so no machine
+identity is recorded — no hostname, username or absolute path. Records written
+before this rule still load; the extra field is ignored.
 """
 
 from __future__ import annotations
@@ -12,7 +16,6 @@ from __future__ import annotations
 import json
 import os
 import platform
-import socket
 import subprocess
 from datetime import datetime, timezone
 from importlib import metadata as _md
@@ -114,7 +117,6 @@ class RunRecord(BaseModel):
     # that only contain {"spec": ..., "result": ...}.
     timestamp: str = Field(default="")
     git_hash: Optional[str] = None
-    hostname: str = Field(default="")
     python_version: str = Field(default="")
     rc_bench_version: str = Field(default="0.1.0")
     lib_versions: Dict[str, str] = Field(default_factory=dict)
@@ -164,7 +166,6 @@ class RunRecord(BaseModel):
             result=result,
             timestamp=datetime.now(timezone.utc).isoformat(),
             git_hash=_git_hash(),
-            hostname=socket.gethostname(),
             python_version=platform.python_version(),
             rc_bench_version=_rc_bench_version(),
             lib_versions=_lib_versions(),

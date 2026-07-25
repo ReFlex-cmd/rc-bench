@@ -8,7 +8,7 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 
 from rc_bench.core.reservoirs.base import BaseReservoir
-from rc_bench.core.schema import ExperimentSpec, MetricsResult
+from rc_bench.core.schema import EvaluationContext, ExperimentSpec, MetricsResult
 from rc_bench.core.metrics import (
     mae,
     mae_skill,
@@ -341,6 +341,10 @@ def run_experiment(
     # the SAME test target set, so the fair table compares like with like.
     mase_value = None
     mae_skill_value = None
+    season = None
+    mase_scale = None
+    seasonal_test_mae = None
+    n_scale_terms = None
     if spec.protocol.seasonal_period is not None and mode == "fixed_horizon":
         season = spec.protocol.seasonal_period
         positions = aligned_target_positions(
@@ -352,11 +356,23 @@ def run_experiment(
         seasonal_test_mae = mae(y_te, seasonal_ref)
         train_values = np.asarray(data["y_train"], dtype=float)
         train_mask = _target_observed_mask(data, "train", train_values)
-        mase_scale, _ = seasonal_naive_mae_scale(
+        mase_scale, n_scale_terms = seasonal_naive_mae_scale(
             train_values, season, observed_mask=train_mask
         )
         mase_value = mase(y_te, y_test_pred, mase_scale)
         mae_skill_value = mae_skill(mae(y_te, y_test_pred), seasonal_test_mae)
+
+    # Same context the baseline runner records (DEC-013), so a reader of the
+    # evidence bundle can confirm both families scored the same target set and
+    # shared the same MASE scale without reloading the predictions.
+    evaluation = EvaluationContext(
+        target_start_index=target_offset(washout, spec.protocol.horizon, mode),
+        n_test_targets=int(y_te.size),
+        seasonal_period=season,
+        mase_scale=mase_scale,
+        seasonal_test_mae=seasonal_test_mae,
+        n_mase_scale_terms=n_scale_terms,
+    )
 
     metrics = MetricsResult(
         rmse=rmse(y_te, y_test_pred),
@@ -377,6 +393,7 @@ def run_experiment(
 
     return {
         "metrics": metrics,
+        "evaluation": evaluation,
         "best_alpha": best_alpha,
         "preds": y_test_pred,
         "y_test": y_te,

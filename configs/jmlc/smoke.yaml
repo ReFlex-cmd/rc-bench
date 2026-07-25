@@ -8,6 +8,10 @@
 dataset:
   name: uci_household_power
   length: 12000
+  # Pinned to configs/jmlc/dataset_manifest.json raw_file.sha256 so every
+  # RunRecord produced from this template is traceable to the exact raw bytes
+  # (tests/test_jmlc_matrix.py fails if the two ever drift apart).
+  raw_sha256: 4259c9d7ece5dbee9ab8d53682baac68d791c864f0f64a52b4043cb3b90894b7
 reservoir:
   type: esn
   params: {}

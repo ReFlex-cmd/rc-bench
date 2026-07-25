@@ -71,8 +71,11 @@ def _persistence_spec() -> ExperimentSpec:
     )
 
 
-def _esn_spec() -> ExperimentSpec:
-    protocol = _protocol().model_copy(update={"n_seeds": 1})
+def _esn_spec(n_seeds: int = 1, *, seasonal: bool = False) -> ExperimentSpec:
+    update: dict[str, object] = {"n_seeds": n_seeds}
+    if seasonal:
+        update.update(selection_metric="nrmse_std", seasonal_period=SEASON)
+    protocol = _protocol().model_copy(update=update)
     return ExperimentSpec(
         dataset=DatasetSpec(name="uci_household_power", length=12_000),
         reservoir=ReservoirSpec(type="esn", params={"n_units": 30, "scaler": "none"}),
@@ -112,3 +115,31 @@ def test_vslice_persistence_and_esn_share_target_set(tmp_path: Path) -> None:
     persistence_npz = np.load(persistence.artifact_paths["predictions"])
     esn_npz = np.load(esn.artifact_paths["predictions"])
     np.testing.assert_array_equal(persistence_npz["y_test"], esn_npz["y_test"])
+
+
+def test_both_families_record_the_same_evaluation_context() -> None:
+    """Evidence-level proof that the fair table compares like with like.
+
+    A reader of the bundle must be able to check the shared target set and the
+    shared MASE scale from the RunRecords alone, without reloading predictions,
+    so both families have to record the EvaluationContext — not just baselines.
+    """
+    data = _data()
+
+    persistence = run_pipeline(data, _persistence_spec())
+    esn = run_pipeline(data, _esn_spec(seasonal=True))
+
+    assert esn.evaluation is not None
+    assert esn.evaluation == persistence.evaluation
+    assert esn.evaluation.n_test_targets == persistence.evaluation.n_test_targets
+    assert esn.evaluation.mase_scale == persistence.evaluation.mase_scale
+
+
+def test_multi_seed_reservoir_records_the_evaluation_context() -> None:
+    """The fair matrix runs reservoirs with 5 seeds — that path needs it too."""
+    result = run_pipeline(_data(), _esn_spec(n_seeds=2, seasonal=True))
+
+    assert result.multi_seed_result is not None
+    assert result.evaluation is not None
+    assert result.evaluation.target_start_index == WASHOUT + HORIZON
+    assert result.evaluation.seasonal_period == SEASON

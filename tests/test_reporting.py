@@ -86,9 +86,40 @@ class TestRunRecord:
         result = _run()
         rec = RunRecord.make(_SPEC, result)
         assert rec.timestamp != ""
-        assert rec.hostname != ""
         assert rec.python_version != ""
         assert rec.rc_bench_version != ""
+
+    def test_record_carries_no_machine_identity(self, tmp_path):
+        """DEC-008: published RunRecords must not carry hostname/username/paths.
+
+        RunRecords are themselves published evidence, so the record must not
+        contain the identifier at all — sanitizing it away at bundle time would
+        leave every raw record a leak waiting to be copied.
+        """
+        import socket
+
+        rec = RunRecord.make(_SPEC, _run())
+        assert not hasattr(rec, "hostname")
+
+        path = tmp_path / "run.json"
+        save_run_record(rec, path)
+        dumped = path.read_text()
+        assert "hostname" not in dumped
+        hostname = socket.gethostname()
+        if hostname:
+            assert hostname not in dumped
+
+    def test_load_record_written_with_a_hostname(self, tmp_path):
+        """Records written before DEC-008 sanitization still load (field ignored)."""
+        rec = RunRecord.make(_SPEC, _run())
+        payload = json.loads(rec.model_dump_json())
+        payload["hostname"] = "some-old-machine"
+        path = tmp_path / "legacy_hostname.json"
+        path.write_text(json.dumps(payload))
+
+        loaded = load_run_record(path)
+        assert loaded.result.config_hash == rec.result.config_hash
+        assert not hasattr(loaded, "hostname")
 
     def test_make_preserves_spec_and_result(self):
         result = _run()
@@ -108,7 +139,7 @@ class TestRunRecord:
         assert loaded.resolved_spec == rec.resolved_spec
         assert loaded.result.config_hash == rec.result.config_hash
         assert loaded.timestamp == rec.timestamp
-        assert loaded.hostname == rec.hostname
+        assert loaded.git_hash == rec.git_hash
 
     def test_load_legacy_format(self, tmp_path):
         """Files saved by the old CLI (no metadata fields) must load without error."""
@@ -501,7 +532,6 @@ class TestCLIReport:
         loaded = load_run_record(out_file)
         assert loaded.result.status == "completed"
         assert loaded.timestamp != ""
-        assert loaded.hostname != ""
 
     def test_run_cmd_artifacts_flag(self, tmp_path):
         from typer.testing import CliRunner
