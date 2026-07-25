@@ -117,8 +117,14 @@ def run_matrix(
     runs_dir.mkdir(parents=True, exist_ok=True)
     artifacts_dir = output_dir / "artifacts"
 
-    dataset_name = template["dataset"]["name"]
-    data = get_data_for_experiment(dataset_name)
+    dataset = template["dataset"]
+    protocol = template["protocol"]
+    data = get_data_for_experiment(
+        dataset["name"],
+        length=dataset.get("length", 2000),
+        train_frac=protocol.get("train_frac", 0.6),
+        val_frac=protocol.get("val_frac", 0.2),
+    )
 
     cells = list(cells) if cells is not None else list(CANONICAL_CELLS)
     horizons = horizons if horizons is not None else HORIZONS
