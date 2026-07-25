@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "dataset": {
+    "id": "uci-235",
+    "name": "Individual Household Electric Power Consumption",
+    "doi": "10.24432/C58K54",
+    "landing_page_url": "https://archive.ics.uci.edu/dataset/235/individual%2Bhousehold%2Belectric%2Bpower%2Bconsumption"
+  },
+  "license": {
+    "name": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+    "url": "https://creativecommons.org/licenses/by/4.0/"
+  },
+  "source": {
+    "url": "https://archive.ics.uci.edu/static/public/235/individual%2Bhousehold%2Belectric%2Bpower%2Bconsumption.zip",
+    "archive_filename": "uci_235.zip",
+    "archive_sha256": "9f84b46ade8a2d8e1286ec4b2b6c2987a45a755c59f263be3b3b3d10dfbda3ff",
+    "archive_size_bytes": 20640916
+  },
+  "raw_file": {
+    "archive_member": "household_power_consumption.txt",
+    "filename": "household_power_consumption.txt",
+    "sha256": "4259c9d7ece5dbee9ab8d53682baac68d791c864f0f64a52b4043cb3b90894b7",
+    "size_bytes": 132960755
+  },
+  "provenance": {
+    "verified_on": "2026-07-24",
+    "checksum_method": "SHA-256 over the exact bytes downloaded from source.url",
+    "official_cross_check_url": "https://archive.ics.uci.edu/ml/machine-learning-databases/00235/household_power_consumption.zip",
+    "official_cross_check_archive_sha256": "9f84b46ade8a2d8e1286ec4b2b6c2987a45a755c59f263be3b3b3d10dfbda3ff"
+  }
+}
