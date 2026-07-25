@@ -1,68 +1,74 @@
-# Session handoff — 2026-07-25 (Claude session 2)
+# Session handoff — 2026-07-25 (Claude session 3)
 
 > **Начни следующую сессию с чтения этого файла, затем `docs/agent/` (PROJECT_CONTRACT, WORK_PLAN, BACKLOG, DECISIONS, AGENT_WORKFLOW).**
 
 ## Точка продолжения
 
-- Ветка: `dev`, HEAD `0aad2fa` (+ этот docs-коммит поверх). `origin/dev` отстаёт (**ничего не запушено**).
-- Рабочее дерево чистое после docs-коммита.
-- Последний полный `bash scripts/verify.sh quick`: **427 passed, 1 deselected** (зелёный).
-- Активных сабагентов и фоновых процессов нет. PROF-сабагент завершён и интегрирован; его worktree удалён.
+- Ветка: `dev`, HEAD `9761c05`. `origin/dev` отстаёт — **ничего не запушено**.
+- Рабочее дерево чистое. Активных сабагентов и фоновых процессов нет; worktree PROF-сабагента удалён.
+- `bash scripts/verify.sh quick`: **489 passed, 1 deselected**.
+- `bash scripts/verify.sh release`: **проходит целиком** (evidence OK, 14 cells, санитизация выполняется по-настоящему).
 
-## Что сделано в этой сессии (поверх `97d1537`, 15 коммитов)
+## Что сделано в этой сессии (11 коммитов поверх `8f6a6ce`)
 
-Порядок next-steps #1–#4 + пред-условия + PROF + EXP-001 + reservoir-метрики:
+Пройдены next-steps #1–#4 из прошлого handoff плюс найденные по дороге дефекты.
 
-- `b5ae127` schema WIP доведён (BaselineSpec, exactly-one, raw_sha256, selection_metric/seasonal_period, опц. JMLC-метрики, SelectionResult/EvaluationContext, ResultSpec traceability); legacy config_hash закреплён.
-- `f247481` **ESN split isolation** (был blocker): `transform()` reset-ит reservoirpy state; regression `TestBatchTransformStatelessness`.
-- `5c38ab6` MET-001: `seasonal_naive_mae_scale`, `mase`, `mae_skill` + edge-cases.
-- `7f33fae` BASE-001 предикторы; `bcf8865` BASE-002 Ridge AR (+ **DEC-015**); `0866fe8` `run_baseline` (общий target-alignment, замок DEC-013).
-- `d6f5bfc` **baseline dispatch + VSLICE-001**: `run_pipeline` → `_run_baseline_pipeline`; reservoir ResultSpec тоже с model_family/deterministic/evaluated_seeds/selection.
-- `111c12d` reporting baseline-aware (`spec.model_type`); `873beac` reservoir alpha/HPO по `selection_metric` (DEC-013; argmin инвариантен, но `val_nrmse_std` теперь заполняется).
-- `57fceaf` **PROF-001/002** (cherry-pick сабагента): `src/rc_bench/profiling/{latency,memory,hardware}.py` — generic utilities, 14 тестов. Санитизация DEC-008.
-- `a87bceb` EXP-001: `runners/jmlc_matrix.py` + `scripts/run_jmlc_matrix.py` + `configs/jmlc/smoke.yaml`; `0aad2fa` фикс загрузки UCI-данных в раннере.
-- `260b724` **reservoir MASE/MAE-skill**: `run_experiment` считает mase/mae_skill (при `seasonal_period` + fixed_horizon) на том же basis, что baselines → полный паритет fair-таблицы.
+- **EXP-002 + EXP-003.** Smoke 14/14 (17 с). Fair-матрица 14/14 (**1.9 мин** — оценка «нужно согласовать окно compute» не подтвердилась, LSM-ячейка на полном бюджете 20.8 с). `configs/jmlc/fair.yaml` — 20 trials, 5 seeds.
+- **`46bd1f9` три дефекта достоверности evidence**, найденные при проверке smoke: `hostname` в каждом RunRecord (DEC-008 + release gate упал бы на всём бандле) → поле убрано из модели; `evaluation` был null у reservoir → `EvaluationContext` пишут оба семейства, включая multi-seed путь; `raw_sha256` не заполнялся → пиннуется в конфиге, а `run_matrix` **хеширует реальный файл** перед прогоном.
+- **`5f55d7d` EVID-001**: `src/rc_bench/reporting/evidence.py` + `scripts/validate_evidence.py` (его требовал release gate, а его не существовало). Валидатор перепроверяет: статусы, config hashes, единый digest, общий EvaluationContext на горизонт, объявленные seeds, равный HPO-бюджет (DEC-004), конечность метрик, профиль на том же config hash. Агрегаты: `aggregates/matrix_table.{json,csv}`.
+- **`9cd490a` PLOT-001** + **`b047e4d`/`340384d` PROF-003** (cherry-pick сабагента): профилировочный проход `scripts/run_profiling.py` и Pareto-графики.
+- **`949b3d8` ключевая находка**: первый реальный профиль показал Ridge AR (87.4 мкс) «медленнее» ESN (73.1 мкс). Измерение примитивов: `sklearn.Ridge.predict(1×300)` = 42.2 мкс, `StandardScaler.transform` = 38.3 мкс против 1.05 мкс на `coef @ state`. Накладной расход фреймворка составлял **55–96 %** публикуемых чисел. Добавлено второе измерение `latency_deployable` (те же коэффициенты, арифметика вместо sklearn-API; равенство предсказаний проверяется с `rtol=1e-9`). См. DEC-019.
+- **`9761c05` дефект гейта**: `if rg ...; then fail; fi` при отсутствии `rg` даёт false → обе проверки санитизации release gate молча пропускались (`rg` на этой машине — shell-функция, невидимая скрипту). Переведено на `grep`; проверено подкладыванием `/home/...` — гейт падает и называет файл. Сам бандл был чист.
+- **`eb32fd4` DEMO-001** + **`36e5f81` DOC-001**: `configs/jmlc/demo.yaml` (~13 с), секции реальных данных и демо в README, MASE/MAE-skill в выводе CLI.
 
-**DONE:** BOOT-001/002, COR-001/002/003, TEST-001, CI-001, DATA-001/002/003, ENERGY-001, EDA-001, DOC-002, BASE-001, BASE-002, MET-001, VSLICE-001, PROF-001, PROF-002, EXP-001.
+**DONE:** всё P0, кроме PRES-001 и REL-001. Новые решения: DEC-016..020.
 
-## Проверено на реальных данных (проба, не закоммичена — вывод в scratchpad)
+## Результаты (все числа — из `reports/jmlc_2026/aggregates/matrix_table.json`)
 
-`run_matrix` на реальном UCI-окне, h=1: все cells `completed`, RunRecords+артефакты пишутся. Числа осмысленны:
-persistence NRMSE_std=0.768 (skill 0.354), seasonal NRMSE_std=1.123 (self-skill **0.000** ✓), ridge_ar 0.676 (skill 0.388, лучший baseline), esn 0.704 (skill 0.354), leaky_esn 0.689 (skill 0.382). ~2 с/reservoir-cell (HPO 2 trials).
+Качество (NRMSE_std, ниже лучше), h=1 / h=24: **esn 0.6647 / 0.8705** (лучший на обоих),
+leaky_esn 0.6743 / 0.8910, **ridge_ar 0.6760 / 0.9023** (лучший baseline),
+logistic 0.7513 / 0.9656, persistence 0.7682 / 1.1273, lsm 0.9449 / 0.9832,
+seasonal_persistence 1.1230 / 1.1273. SD по 5 seeds: 0.001–0.019.
 
-## Следующие шаги (по порядку)
+Стоимость (deployable p50, h=1): persistence 0.27 мкс, ridge_ar 3.37 мкс, logistic 9.59 мкс,
+esn 21.82 мкс, lsm 43.05 мкс. Рабочее состояние: 192 Б у ridge_ar против 2.3 КиБ у ESN.
 
-1. **EXP-002 — полный smoke (14 cells).** Запустить:
-   ```bash
-   poetry run python scripts/run_jmlc_matrix.py \
-     --config configs/jmlc/smoke.yaml --output reports/jmlc_2026/smoke
-   ```
-   Проверить: все 14 cells `completed`, отсутствие test-leakage, schema/артефакты, время. LSM может быть медленнее — при необходимости убавить reservoir units в smoke.yaml. Проба показала, что путь рабочий; полный прогон ещё НЕ делался.
-2. **Wire PROF в evidence (P0, нужно для release gate).** Утилиты `rc_bench.profiling` пока НИГДЕ не вызываются. Нужен отдельный профилировочный проход (НЕ во время train — latency нельзя мешать с train-временем): для каждой модели построить inference-step callable → `measure_latency` (p50/p95/throughput), `measure_peak_rss_subprocess`, `serialized_model_bytes`, `working_state_bytes`; и один раз `get_hardware_profile()` → записать `reports/jmlc_2026/hardware_profile.json`. Это отдельный `scripts/`-скрипт или расширение матрицы отдельной фазой.
-3. **EXP-003 — fair matrix (5 seeds, 20 trials).** Требует РЕАЛЬНОГО compute-времени → **согласовать тайминг с пользователем перед запуском**. Конфиг: копия smoke.yaml с `n_seeds: 5`, `hpo_budget: 20` (напр. `configs/jmlc/fair.yaml`). При нехватке времени — одинаково уменьшить до 10 trials (DEC-004); 5 seeds/оба горизонта/baselines НЕ сокращать.
-4. EVID-001 (aggregation, traceability, `scripts/validate_evidence.py`) → PLOT-001 (Pareto quality-latency/quality-memory) → DOC-001 → DEMO-001 → PRES-001 → REL-001 (PR `dev → main`, без merge/force).
+**Вывод:** резервуар покупает 1.7–3.5 % точности за ~5× стоимости шага, 12× рабочего
+состояния и 50× размера модели. На Pareto-фронте — persistence, Ridge AR, ESN; leaky ESN,
+logistic и LSM доминируются. LSM на h=24 хуже сезонного наива (skill −0.019) — опубликовано как есть.
 
-## Известные pending-элементы (обнаружены, НЕ сделаны)
+## Следующие шаги
 
-- **`reports/jmlc_2026/dataset_manifest.json` отсутствует** — `verify.sh smoke` и `release` его требуют (manifest сейчас только в `configs/jmlc/dataset_manifest.json`). Скопировать/сгенерировать в evidence-каталог.
-- **`scripts/validate_evidence.py` отсутствует** — требуется `verify.sh release` (EVID-001).
-- **PROF не подключён** (см. шаг 2).
-- **`main.py` REST API** (`create_experiment`) всё ещё завязан на `reservoir.type` — вне JMLC-пути, трек API-001 (P2).
-- Reservoir alpha/HPO-селекция: argmin инвариантен к range/std (для фикс. val-набора обе = RMSE/const), поэтому DEC-013 «reservoir HPO по NRMSE_std» не меняет выбор конфигов — но `val_nrmse_std` и HPO-score теперь в headline-единицах.
+1. **REL-001 — PR `dev → main`.** Гейт зелёный. Нужно решение пользователя: пуш `dev` и открытие PR (в этой сессии не делалось — push без запроса запрещён). 11 коммитов.
+2. **PRES-001 — BLOCKED:** файла презентации в репозитории нет. Нужны от пользователя сам файл или решение делать слайды с нуля. Все числа и оба графика для переноса готовы: `reports/jmlc_2026/README.md`, `plots/pareto_quality_{latency,memory}.png`.
+3. **REPO-001 — вопрос к пользователю:** README содержит бейдж MIT и ссылку `[MIT](LICENSE)`, но **файла `LICENSE` в репозитории нет**. Перед публичным релизом нужно либо добавить файл выбранной лицензии, либо убрать заявление.
+
+## Известные pending-элементы
+
+- `main.py` REST API (`create_experiment`) всё ещё завязан на `reservoir.type` — вне JMLC-пути, трек API-001 (P2).
+- PROXY-001/002 (operation count, sparsity, LSM events) — P1, не начаты; по WORK_PLAN сокращаются первыми.
+- Профилирование reservoir-моделей внутри `model_profiles.py` игнорирует `target_observed_mask_*` при локальном fit — на latency/память не влияет (точность там не измеряется), но код нельзя переиспользовать для accuracy-чувствительных задач без правки.
+- `peak_rss_bytes` измеряется в forked-процессе и наследует память родителя (DEC-020): это footprint процесса, не модели. Чтобы получить настоящую изоляцию, нужен spawn-процесс, собирающий модель с нуля.
 
 ## Ключевые команды
 
-- Gate: `bash scripts/verify.sh quick` (unit, не-integration) — держать зелёным перед каждым commit.
-- `verify.sh smoke` / `release` — см. `scripts/verify.sh` (нужны недостающие evidence-файлы выше).
-- Матрица: `scripts/run_jmlc_matrix.py --config <yaml> --output <dir>`; `run_matrix(...)` в `rc_bench.runners.jmlc_matrix` принимает `cells=`/`horizons=` для подвыборки.
-- Данные: raw UCI локально в `data/raw/` (gitignored); `get_data_for_experiment("uci_household_power", length=12000, train_frac=0.6, val_frac=0.2)`.
+```bash
+bash scripts/verify.sh quick          # держать зелёным перед каждым коммитом
+bash scripts/verify.sh release        # полный гейт: тесты + evidence + санитизация
+poetry run python scripts/run_jmlc_matrix.py --config configs/jmlc/fair.yaml --output reports/jmlc_2026/fair
+poetry run python scripts/run_profiling.py --config configs/jmlc/fair.yaml \
+    --runs reports/jmlc_2026/fair/runs --output reports/jmlc_2026/profiles \
+    --hardware-output reports/jmlc_2026/hardware_profile.json
+poetry run python scripts/validate_evidence.py reports/jmlc_2026 --write
+poetry run python scripts/plot_pareto.py --bundle reports/jmlc_2026 --output reports/jmlc_2026/plots
+```
+
+Данные: raw UCI локально в `data/raw/` (gitignored), скачивание — `scripts/download_jmlc_data.py`.
+`reports/jmlc_2026/smoke/` намеренно gitignored (артефакт гейта); публикуется fair-матрица.
 
 ## Правила работы (подтверждено пользователем)
 
-- Гибрид: сабагенты на тяжёлых независимых задачах (PROF-подобные, plots), cross-cutting (schema/pipeline/runners/backlog/decisions) — основной агент. Управление через скилл `subagent-driven-development`. **Замечание по worktree:** worktree сабагента может создаться от устаревшего базового коммита — интегрировать через `git cherry-pick <commit>` на актуальный `dev`, не merge; после — `git worktree remove --force` + `git branch -D`.
-- Идти автономно по цепочке next-steps до блокера. Коммитить логическими единицами с зелёным gate; НЕ push без запроса; `main` напрямую не менять; force push запрещён.
+- Гибрид: сабагенты на тяжёлых независимых задачах, cross-cutting (schema/pipeline/runners/evidence/backlog/decisions) — основной агент. Скилл `subagent-driven-development`.
+- **Про worktree сабагента:** создаётся от устаревшего базового коммита — интегрировать `git cherry-pick <sha>`, не merge; после — `git worktree remove --force` + `git branch -D`. **Не удалять worktree до того, как решено, нужны ли доработки** — иначе сабагента уже не возобновить.
+- Идти автономно по цепочке next-steps до блокера. Коммитить логическими единицами с зелёным гейтом; НЕ push без запроса; `main` напрямую не менять; force push запрещён.
 - `gh auth status` валиден (`ReFlex-cmd`, scopes repo+workflow).
-
-## Решения
-
-DEC-001..015 в `docs/agent/DECISIONS.md`. Свежие/ключевые для baseline: DEC-012/013 (единый target set, per-split washout 200, fixed_horizon для UCI включая h=1, MASE train-only lag-24, MAE skill vs seasonal), DEC-014 (`BaselineSpec` deterministic, selection none/fixed_grid), **DEC-015** (Ridge AR: train-only scaler, alpha по val NRMSE_std, рефит train+val).

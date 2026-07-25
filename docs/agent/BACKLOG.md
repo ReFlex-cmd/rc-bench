@@ -25,13 +25,13 @@
 | EXP-001 | P0 | Сгенерировать frozen smoke matrix 14 cells | BASE-002, MET-001, PROF-002 | 0.5 ч | DONE |
 | EXP-002 | P0 | Выполнить и проверить smoke matrix | EXP-001 | 1 ч + compute | DONE |
 | EXP-003 | P0 | Выполнить fair matrix: 20 trials, 5 seeds | EXP-002 | 1 ч + compute | DONE |
-| PROF-003 | P0 | Профилировочный проход: latency/RSS/размеры по cells | PROF-002, EXP-002 | 1.5 ч | IN_PROGRESS |
+| PROF-003 | P0 | Профилировочный проход: latency/RSS/размеры по cells | PROF-002, EXP-002 | 1.5 ч | DONE |
 | EVID-001 | P0 | Evidence bundle, aggregation, traceability | EXP-003 | 1.5 ч | DONE |
-| PLOT-001 | P0 | Quality-latency и quality-memory Pareto plots | EVID-001 | 1 ч | DONE (ждёт profiles для рендера) |
-| DOC-001 | P0 | README, protocol, limitations, demo-config | EVID-001 | 1.5 ч | IN_PROGRESS |
+| PLOT-001 | P0 | Quality-latency и quality-memory Pareto plots | EVID-001 | 1 ч | DONE |
+| DOC-001 | P0 | README, protocol, limitations, demo-config | EVID-001 | 1.5 ч | DONE |
 | DOC-002 | P0 | `AI_USAGE.md` с ролями, проверками и вкладом автора | BOOT-002 | 1 ч | DONE |
-| DEMO-001 | P0 | Воспроизводимый demo-сценарий и резервные готовые артефакты | DOC-001, PLOT-001 | 1 ч | READY |
-| PRES-001 | P0 | Перенести подтверждённые числа и графики в презентацию | EVID-001, PLOT-001 | 1.5 ч | READY |
+| DEMO-001 | P0 | Воспроизводимый demo-сценарий и резервные готовые артефакты | DOC-001, PLOT-001 | 1 ч | DONE |
+| PRES-001 | P0 | Перенести подтверждённые числа и графики в презентацию | EVID-001, PLOT-001 | 1.5 ч | BLOCKED (нет файла презентации в репозитории) |
 | REL-001 | P0 | Release gate и PR `dev → main` | PLOT-001, DOC-001, DOC-002, DEMO-001 | 1 ч | READY |
 | PROXY-001 | P1 | Operation count и state sparsity | PROF-002 | 1.5 ч | READY |
 | PROXY-002 | P1 | LSM spikes и synaptic events | PROF-002 | 1.5 ч | READY |
