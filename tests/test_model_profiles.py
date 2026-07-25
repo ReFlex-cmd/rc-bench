@@ -34,11 +34,14 @@ from rc_bench.core.schema import (
 )
 from rc_bench.profiling.model_profiles import (
     build_persistence_step_fn,
+    build_reservoir_compute_step_fn,
     build_reservoir_step_fn,
+    build_ridge_ar_compute_step_fn,
     build_ridge_ar_step_fn,
     build_seasonal_persistence_step_fn,
     run_profiling_pass,
 )
+from rc_bench.readout.ridge import RidgeReadout
 from rc_bench.reporting.run_record import RunRecord, save_run_record
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -269,6 +272,59 @@ def _two_good_cells(runs_dir: Path) -> None:
     _write_cell(runs_dir, "reservoir", "logistic", _HORIZON, reservoir_spec)
 
 
+class TestDeployableStepEquivalence:
+    """The deployable step must predict what the as-implemented step predicts.
+
+    The second latency measurement exists because sklearn's per-sample API costs
+    ~30-40 us of validation overhead that dwarfs the arithmetic, so an edge
+    deployment would use the fitted coefficients directly. That is only a
+    measurement of the same model if it returns the same numbers — otherwise the
+    faster path is simply computing something else.
+    """
+
+    def test_reservoir_paths_agree(self):
+        rng = np.random.default_rng(7)
+        reservoir = LogisticReservoir({"seed": 3, "units": 40})
+        X = rng.standard_normal((30, 1))
+        H = reservoir.transform(X)
+        y = H @ rng.standard_normal(H.shape[1]) + 0.5
+
+        readout = RidgeReadout(0.1)
+        readout.fit(H, y)
+
+        reservoir.reset_state()
+        framework = build_reservoir_step_fn(reservoir, readout, X)
+        framework_values = [framework() for _ in range(12)]
+
+        reservoir.reset_state()
+        deployable = build_reservoir_compute_step_fn(reservoir, readout, X)
+        deployable_values = [deployable() for _ in range(12)]
+
+        np.testing.assert_allclose(deployable_values, framework_values, rtol=1e-9, atol=1e-12)
+
+    def test_ridge_ar_paths_agree(self):
+        rng = np.random.default_rng(11)
+        values = np.cumsum(rng.standard_normal(200)) + 50.0
+        n_lags = 6
+        horizon = 3
+        tau = horizon + n_lags - 1
+
+        design = np.stack([values[i : i + n_lags][::-1] for i in range(60)])
+        target = values[n_lags : n_lags + 60]
+        scaler = StandardScaler().fit(design)
+        model = Ridge(alpha=0.5).fit(scaler.transform(design), target)
+
+        framework = build_ridge_ar_step_fn(values, tau, horizon, scaler, model, n_lags=n_lags)
+        deployable = build_ridge_ar_compute_step_fn(
+            values, tau, horizon, scaler, model, n_lags=n_lags
+        )
+
+        framework_values = [framework() for _ in range(15)]
+        deployable_values = [deployable() for _ in range(15)]
+
+        np.testing.assert_allclose(deployable_values, framework_values, rtol=1e-9, atol=1e-12)
+
+
 def test_full_pass_writes_sanitized_per_cell_and_summary_json(tmp_path):
     config_path = _dataset_config_yaml(tmp_path, length=_LENGTH)
     runs_dir = tmp_path / "runs"
@@ -293,6 +349,8 @@ def test_full_pass_writes_sanitized_per_cell_and_summary_json(tmp_path):
     expected_keys = {
         "family", "model", "horizon", "config_hash", "status",
         "p50_ns", "p95_ns", "throughput_samples_per_s",
+        "deployable_p50_ns", "deployable_p95_ns",
+        "deployable_throughput_samples_per_s",
         "peak_rss_bytes", "peak_rss_delta_bytes",
         "serialized_model_bytes", "working_state_bytes",
     }

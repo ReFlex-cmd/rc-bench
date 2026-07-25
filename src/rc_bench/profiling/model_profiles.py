@@ -120,6 +120,87 @@ def build_reservoir_step_fn(
     return step_fn
 
 
+def build_reservoir_compute_step_fn(
+    reservoir: BaseReservoir,
+    readout: RidgeReadout,
+    X_scaled: np.ndarray,
+) -> Callable[[], float]:
+    """Deployment-representative reservoir step: state update + ``coef @ h + b``.
+
+    Identical to :func:`build_reservoir_step_fn` except that the readout is
+    evaluated as plain arithmetic instead of through ``sklearn``'s per-sample
+    ``predict``, whose input validation costs tens of microseconds and would
+    otherwise dominate — and distort — every cross-family latency comparison.
+    The predictions of the two paths agree to floating-point tolerance; see
+    ``tests/test_model_profiles.py``.
+    """
+    X_scaled = np.asarray(X_scaled)
+    n = len(X_scaled)
+    if n == 0:
+        raise ValueError("X_scaled must be non-empty to build a reservoir step function")
+    coef, intercept = readout.coefficients()
+    idx = {"i": 0}
+    last_state: Dict[str, Any] = {"h": None}
+
+    def step_fn() -> float:
+        x_t = X_scaled[idx["i"] % n]
+        h = reservoir.step(np.asarray(x_t).reshape(1, -1))
+        last_state["h"] = h
+        idx["i"] += 1
+        return float(coef @ np.asarray(h).reshape(-1) + intercept)
+
+    step_fn.last_state = last_state  # type: ignore[attr-defined]
+    return step_fn
+
+
+def build_ridge_ar_compute_step_fn(
+    values: np.ndarray,
+    tau: int,
+    horizon: int,
+    scaler: StandardScaler,
+    model: Ridge,
+    n_lags: int = RIDGE_AR_LAGS,
+) -> Callable[[], float]:
+    """Deployment-representative Ridge-AR step.
+
+    Same ring buffer and same fitted parameters as
+    :func:`build_ridge_ar_step_fn`, with ``scaler.transform`` and
+    ``model.predict`` replaced by the arithmetic they perform
+    (``(row - mean) / scale``, then ``coef @ row + intercept``). Without this,
+    Ridge AR pays sklearn's per-call overhead twice and measures as the slowest
+    model in the matrix — a property of the API, not of AR(24).
+    """
+    values = np.asarray(values, dtype=float)
+    if n_lags < 1:
+        raise ValueError("n_lags must be a positive integer")
+    window = horizon + n_lags - 1
+    if tau < window:
+        raise ValueError("tau must be >= horizon + n_lags - 1: insufficient causal history")
+    n = len(values)
+    if n == 0:
+        raise ValueError("values must be non-empty")
+
+    mean = np.asarray(scaler.mean_, dtype=float)
+    scale = np.asarray(scaler.scale_, dtype=float)
+    coef = np.asarray(model.coef_, dtype=float).reshape(-1)
+    intercept = float(np.asarray(model.intercept_).reshape(-1)[0])
+
+    buf: "deque[float]" = deque(values[tau - window : tau], maxlen=window)
+    idx = {"i": tau % n}
+
+    def step_fn() -> float:
+        origin_window = list(buf)[:n_lags]
+        row = np.asarray(origin_window[::-1], dtype=float)
+        row_scaled = (row - mean) / scale
+        new_val = values[idx["i"] % n]
+        buf.append(new_val)
+        idx["i"] += 1
+        return float(coef @ row_scaled + intercept)
+
+    step_fn.buffer = buf  # type: ignore[attr-defined]
+    return step_fn
+
+
 def _build_lag_step_fn(values: np.ndarray, tau: int, lag: int) -> Callable[[], float]:
     """Shared ring-buffer mechanics for persistence / seasonal persistence.
 
@@ -322,15 +403,29 @@ def _fit_ridge_ar(data: Mapping[str, Any], spec: ExperimentSpec):
 # ---------------------------------------------------------------------------
 
 
-def _protocol_block(warmup: int, n_steps: int, step_description: str) -> Dict[str, Any]:
+def _protocol_block(
+    warmup: int,
+    n_steps: int,
+    step_description: str,
+    deployable_description: str,
+) -> Dict[str, Any]:
     return {
         "warmup_steps": warmup,
         "n_steps": n_steps,
         "single_threaded": True,
         "timer": "perf_counter_ns",
         "step_definition": step_description,
+        "deployable_step_definition": deployable_description,
         "fit_excluded_from_timing": True,
     }
+
+
+# Persistence-family steps never call into sklearn, so their two measurements
+# describe the same code; saying so is clearer than pretending they differ.
+_SAME_AS_IMPLEMENTED = (
+    "identical to step_definition: this model performs no framework call, so "
+    "the as-implemented and deployable paths are the same code"
+)
 
 
 def _compute_sizes(model_obj: Any, state_obj: Any) -> Dict[str, Any]:
@@ -383,6 +478,12 @@ def _profile_reservoir_cell(
         step_fn, warmup=warmup, n_steps=n_steps, keep_raw=True, single_threaded=True
     )
 
+    reservoir.reset_state()
+    deployable_step_fn = build_reservoir_compute_step_fn(reservoir, readout, X_test_s)
+    deployable_latency = measure_latency(
+        deployable_step_fn, warmup=warmup, n_steps=n_steps, keep_raw=True, single_threaded=True
+    )
+
     h_sample = step_fn.last_state["h"]  # type: ignore[attr-defined]
     sizes = _compute_sizes(
         model_obj={"reservoir": reservoir, "readout": readout},
@@ -400,8 +501,15 @@ def _profile_reservoir_cell(
     memory = _measure_memory(build_and_run)
 
     return {
-        "protocol": _protocol_block(warmup, n_steps, step_description),
+        "protocol": _protocol_block(
+            warmup,
+            n_steps,
+            step_description,
+            "reservoir.step(x_t) -> h; coef @ h + intercept (the fitted readout "
+            "evaluated as arithmetic, without sklearn's per-sample predict API)",
+        ),
         "latency": latency.to_dict(),
+        "latency_deployable": deployable_latency.to_dict(),
         "memory": memory,
         "sizes": sizes,
     }
@@ -431,6 +539,13 @@ def _profile_ridge_ar_cell(
         step_fn, warmup=warmup, n_steps=n_steps, keep_raw=True, single_threaded=True
     )
 
+    deployable_step_fn = build_ridge_ar_compute_step_fn(
+        values, tau, horizon, fit.scaler, fit.final_model, n_lags=n_lags
+    )
+    deployable_latency = measure_latency(
+        deployable_step_fn, warmup=warmup, n_steps=n_steps, keep_raw=True, single_threaded=True
+    )
+
     state_array = np.array(step_fn.buffer, dtype=np.float64)  # type: ignore[attr-defined]
     sizes = _compute_sizes(
         model_obj={"scaler": fit.scaler, "model": fit.final_model},
@@ -448,8 +563,16 @@ def _profile_ridge_ar_cell(
     memory = _measure_memory(build_and_run)
 
     return {
-        "protocol": _protocol_block(warmup, n_steps, step_description),
+        "protocol": _protocol_block(
+            warmup,
+            n_steps,
+            step_description,
+            f"same {n_lags}-lag buffer, with scaler.transform and model.predict "
+            "replaced by the arithmetic they perform ((row - mean) / scale, then "
+            "coef @ row + intercept)",
+        ),
         "latency": latency.to_dict(),
+        "latency_deployable": deployable_latency.to_dict(),
         "memory": memory,
         "sizes": sizes,
     }
@@ -497,8 +620,9 @@ def _profile_persistence_family_cell(
     memory = _measure_memory(build_and_run)
 
     return {
-        "protocol": _protocol_block(warmup, n_steps, step_description),
+        "protocol": _protocol_block(warmup, n_steps, step_description, _SAME_AS_IMPLEMENTED),
         "latency": latency.to_dict(),
+        "latency_deployable": latency.to_dict(),
         "memory": memory,
         "sizes": sizes,
     }
@@ -610,12 +734,16 @@ def _summary_entry(cell: Dict[str, Any]) -> Dict[str, Any]:
         return base
 
     latency = cell["latency"]
+    deployable = cell["latency_deployable"]
     memory = cell["memory"]
     sizes = cell["sizes"]
     base.update(
         p50_ns=latency["p50_ns"],
         p95_ns=latency["p95_ns"],
         throughput_samples_per_s=latency["throughput_samples_per_s"],
+        deployable_p50_ns=deployable["p50_ns"],
+        deployable_p95_ns=deployable["p95_ns"],
+        deployable_throughput_samples_per_s=deployable["throughput_samples_per_s"],
         peak_rss_bytes=memory["peak_rss_bytes"],
         peak_rss_delta_bytes=memory["peak_rss_delta_bytes"],
         serialized_model_bytes=sizes["serialized_model_bytes"],

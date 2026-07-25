@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Sequence, Tuple
 
 # Categorical slots 1 and 2 of the reference palette, light surface. The first
 # three slots are the documented all-pairs-validated subset, which is the gate
@@ -27,8 +27,15 @@ INK_SECONDARY = "#52514e"
 INK_MUTED = "#8a8983"
 
 # (key on the profile summary, axis label, unit conversion from the raw value)
+#
+# The latency axis uses the DEPLOYABLE measurement, not the as-implemented one:
+# sklearn's per-sample predict API costs tens of microseconds of input
+# validation, which exceeds the arithmetic of every model in this matrix and
+# would rank the models by how many framework calls they happen to make. The
+# as-implemented numbers stay in the profile artifacts and are discussed in the
+# bundle README.
 COST_AXES: Dict[str, Tuple[str, str, float]] = {
-    "latency": ("p50_ns", "Задержка одного шага, p50 (мс, log)", 1e-6),
+    "latency": ("deployable_p50_ns", "Задержка одного шага, p50 (мс, log)", 1e-6),
     "memory": ("working_state_bytes", "Рабочее состояние (КиБ, log)", 1 / 1024),
 }
 
@@ -127,6 +134,86 @@ def _style_axis(ax) -> None:
     ax.tick_params(colors=INK_SECONDARY, labelsize=9)
 
 
+def _set_padded_xlim(ax, panel: Sequence[ParetoPoint]) -> None:
+    """Leave room on the right for the last point's label.
+
+    Matplotlib's autoscale bounds the markers, not the text beside them, so the
+    rightmost label is clipped by the axes edge without explicit padding.
+    """
+    import math
+
+    costs = [p.cost for p in panel]
+    lo, hi = math.log10(min(costs)), math.log10(max(costs))
+    span = (hi - lo) or 1.0
+    ax.set_xlim(10 ** (lo - 0.15 * span), 10 ** (hi + 0.55 * span))
+
+
+def _set_shared_ylim(ax, points: Sequence[ParetoPoint]) -> None:
+    """Set one y range covering every panel (the axis is shared)."""
+    qualities = [p.quality for p in points]
+    y_lo, y_hi = min(qualities), max(qualities)
+    y_span = (y_hi - y_lo) or 0.1
+    ax.set_ylim(y_lo - 0.14 * y_span, y_hi + 0.08 * y_span)
+
+
+def _place_labels(ax, panel: Sequence[ParetoPoint], *, front_ids: set) -> None:
+    """Label every point, nudging labels apart when their points coincide.
+
+    Two models can land on the same coordinates — at h=24 persistence and
+    seasonal persistence are the same predictor — and stacked text is
+    unreadable. Colliding labels step downward and get a leader line so each
+    one still reads to its own marker.
+    """
+    import math
+
+    x_lo, x_hi = (math.log10(v) for v in ax.get_xlim())
+    y_lo, y_hi = ax.get_ylim()
+    x_span = (x_hi - x_lo) or 1.0
+    y_span = (y_hi - y_lo) or 1.0
+
+    label_dx = 0.018          # gap between marker and text, axes fraction
+    row_height = 0.062        # vertical step between stacked labels
+    placed: List[Tuple[float, float, float]] = []  # (x_start, x_end, y)
+
+    ordered = sorted(panel, key=lambda p: (-p.quality, p.cost))
+    for point in ordered:
+        xn = (math.log10(point.cost) - x_lo) / x_span
+        yn = (point.quality - y_lo) / y_span
+        width = 0.014 * len(point.label)
+
+        x_text = xn + label_dx
+        y_text = yn
+        for step in range(6):
+            candidate = yn - step * row_height
+            collides = any(
+                abs(candidate - other_y) < row_height * 0.85
+                and x_text < other_end
+                and x_text + width > other_start
+                for other_start, other_end, other_y in placed
+            )
+            if not collides:
+                y_text = candidate
+                break
+        placed.append((x_text, x_text + width, y_text))
+
+        offset = abs(y_text - yn) > 1e-9
+        ax.annotate(
+            point.label,
+            xy=(point.cost, point.quality),
+            xycoords="data",
+            xytext=(x_text, y_text - 0.012),
+            textcoords="axes fraction",
+            fontsize=8.5,
+            va="bottom",
+            color=INK_PRIMARY if id(point) in front_ids else INK_SECONDARY,
+            arrowprops=(
+                dict(arrowstyle="-", color=INK_MUTED, linewidth=0.6, shrinkA=0, shrinkB=3)
+                if offset
+                else None
+            ),
+        )
+
+
 def plot_quality_cost(
     points: Sequence[ParetoPoint],
     cost: str,
@@ -145,6 +232,7 @@ def plot_quality_cost(
         1, len(horizons), figsize=(11, 4.6), sharey=True, facecolor=SURFACE
     )
     axes = list(axes) if len(horizons) > 1 else [axes]
+    panels: List[Tuple[Any, List[ParetoPoint], set]] = []
 
     for ax, horizon in zip(axes, horizons):
         panel = [p for p in points if p.horizon == horizon]
@@ -175,25 +263,25 @@ def plot_quality_cost(
                 label=family if horizon == horizons[0] else None,
             )
 
-        front_ids = {id(p) for p in front}
-        for point in panel:
-            ax.annotate(
-                point.label,
-                (point.cost, point.quality),
-                textcoords="offset points",
-                xytext=(9, -3),
-                fontsize=8.5,
-                color=INK_PRIMARY if id(point) in front_ids else INK_SECONDARY,
-            )
-
         ax.set_xscale("log")
+        _set_padded_xlim(ax, panel)
+        panels.append((ax, panel, {id(p) for p in front}))
+
         ax.set_title(f"Горизонт h = {horizon}", fontsize=11, color=INK_PRIMARY)
         ax.set_xlabel(axis_label, fontsize=9.5, color=INK_SECONDARY)
+
+    # The y axis is shared, so its range must cover every panel and be final
+    # before labels are positioned — a per-panel set_ylim would let the last
+    # panel crop the others, and labels anchored to stale limits would drift
+    # away from their markers.
+    _set_shared_ylim(axes[0], points)
+    for ax, panel, front_ids in panels:
+        _place_labels(ax, panel, front_ids=front_ids)
 
     axes[0].set_ylabel("NRMSE_std (ниже — лучше)", fontsize=9.5, color=INK_SECONDARY)
     axes[0].annotate(
         "лучше ↙",
-        xy=(0.02, 0.04),
+        xy=(0.02, 0.03),
         xycoords="axes fraction",
         fontsize=8.5,
         color=INK_MUTED,

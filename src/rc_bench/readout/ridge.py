@@ -54,3 +54,15 @@ class RidgeReadout:
 
     def predict(self, H: np.ndarray) -> np.ndarray:
         return self._ridge.predict(H)
+
+    def coefficients(self) -> tuple[np.ndarray, float]:
+        """Return ``(coef, intercept)`` of the fitted readout.
+
+        Exposed so a caller can evaluate the readout as plain arithmetic
+        (``coef @ h + intercept``) instead of going through sklearn's
+        per-sample ``predict`` API, whose input validation costs tens of
+        microseconds per call — the same model, without the framework
+        overhead. Used by the profiling pass; see
+        ``rc_bench.profiling.model_profiles``.
+        """
+        return np.asarray(self._ridge.coef_, dtype=float), float(self._ridge.intercept_)

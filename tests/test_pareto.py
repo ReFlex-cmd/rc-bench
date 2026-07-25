@@ -95,6 +95,7 @@ def _bundle(tmp_path: Path, *, profile_hash: str | None = None) -> Path:
             "config_hash": profile_hash or row["config_hash"],
             "status": "completed",
             "p50_ns": 500.0 if row["family"] == "baseline" else 45_000.0,
+            "deployable_p50_ns": 500.0 if row["family"] == "baseline" else 45_000.0,
             "working_state_bytes": 192 if row["family"] == "baseline" else 8_192,
         }
         for row in rows
