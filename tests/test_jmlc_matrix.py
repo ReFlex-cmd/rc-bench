@@ -14,6 +14,8 @@ from rc_bench.runners.jmlc_matrix import (
     HORIZONS,
     build_cell_spec,
     load_template,
+    resolve_budget,
+    resolve_mode,
     verify_pinned_raw_digest,
 )
 
@@ -61,6 +63,94 @@ def test_reservoir_cell_keeps_seed_and_hpo():
     assert spec.protocol.n_seeds == 1
     assert spec.protocol.use_hpo is True
     assert spec.protocol.selection_metric == "nrmse_std"
+
+
+def test_template_without_a_matrix_block_is_fair():
+    """Существующие конфиги режима не объявляют — они обязаны остаться fair."""
+    assert resolve_mode(_TEMPLATE) == "fair"
+    assert build_cell_spec(_TEMPLATE, "reservoir", "esn", 1).protocol.mode == "fair"
+
+
+def test_best_effort_template_gives_each_model_its_own_budget():
+    template = {
+        **_TEMPLATE,
+        "matrix": {"mode": "best_effort", "budgets": {"esn": 60, "lsm": 40}},
+    }
+
+    assert resolve_mode(template) == "best_effort"
+    assert resolve_budget(template, "esn") == 60
+    assert resolve_budget(template, "lsm") == 40
+    # Модель без индивидуальной строки наследует бюджет шаблона.
+    assert resolve_budget(template, "logistic") == _TEMPLATE["protocol"]["hpo_budget"]
+
+    spec = build_cell_spec(template, "reservoir", "lsm", 24)
+    assert spec.protocol.mode == "best_effort"
+    assert spec.protocol.hpo_budget == 40
+
+
+def test_fair_template_rejects_per_model_budgets():
+    """В fair-режиме индивидуальный бюджет — нарушение DEC-004, а не опция:
+    такая конфигурация означает, что автор хотел best_effort и забыл
+    переключить режим. Молча выполнить её — значит опубликовать неравное
+    сравнение под вывеской равного."""
+    template = {**_TEMPLATE, "matrix": {"mode": "fair", "budgets": {"esn": 60}}}
+
+    with pytest.raises(ValueError, match="best_effort"):
+        resolve_budget(template, "esn")
+
+
+def test_unknown_mode_is_refused():
+    template = {**_TEMPLATE, "matrix": {"mode": "generous"}}
+
+    with pytest.raises(ValueError, match="generous"):
+        resolve_mode(template)
+
+
+def test_mode_declared_in_protocol_alone_is_honoured():
+    """`rcbench validate-spec` видит только protocol, поэтому шаблон вправе
+    объявить режим там; раннер обязан его прочитать."""
+    template = {
+        **_TEMPLATE,
+        "protocol": {**_TEMPLATE["protocol"], "mode": "best_effort"},
+    }
+
+    assert resolve_mode(template) == "best_effort"
+
+
+def test_disagreeing_mode_declarations_are_refused():
+    """Если matrix и protocol расходятся, один из двух отчётов о шаблоне
+    врёт — валидатор покажет одно, раннер выполнит другое."""
+    template = {
+        **_TEMPLATE,
+        "matrix": {"mode": "best_effort"},
+        "protocol": {**_TEMPLATE["protocol"], "mode": "fair"},
+    }
+
+    with pytest.raises(ValueError, match="make them agree"):
+        resolve_mode(template)
+
+
+def test_best_effort_config_declares_the_mode_consistently():
+    """Опубликованный конфиг должен проходить обе проверки: и раннера, и
+    валидатора спецификации."""
+    config = Path(__file__).resolve().parents[1] / "configs" / "jmlc" / "best_effort.yaml"
+    template = load_template(config)
+
+    assert resolve_mode(template) == "best_effort"
+    assert template["protocol"]["mode"] == "best_effort"
+    assert build_cell_spec(template, "reservoir", "lsm", 24).protocol.hpo_budget == 40
+
+
+def test_baseline_cells_record_the_mode_but_ignore_budgets():
+    template = {
+        **_TEMPLATE,
+        "matrix": {"mode": "best_effort", "budgets": {"esn": 60}},
+    }
+    spec = build_cell_spec(template, "baseline", "persistence", 1)
+
+    assert spec.protocol.mode == "best_effort"
+    assert spec.protocol.use_hpo is False
+    assert spec.protocol.n_seeds == 0
 
 
 def test_every_canonical_cell_builds_a_valid_spec():

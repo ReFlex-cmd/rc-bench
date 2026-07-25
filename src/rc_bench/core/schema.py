@@ -53,6 +53,14 @@ class ProtocolSpec(BaseModel):
     selection_metric: Literal["nrmse_range", "nrmse_std"] = "nrmse_range"
     # Enables train-only MASE and test seasonal-skill accounting when present.
     seasonal_period: Optional[int] = None
+    # Режим сравнения. ``fair`` — единый вычислительный бюджет и одинаковые
+    # правила отбора для всех reservoir-моделей (DEC-004); ``best_effort`` —
+    # индивидуальная настройка каждой архитектуры. Поле живёт в протоколе, а
+    # не в шаблоне матрицы, чтобы попадать во frozen и resolved spec каждой
+    # ячейки: иначе по самой записи нельзя было бы сказать, в каких условиях
+    # получено число. Результаты двух режимов никогда не сводятся в одну
+    # таблицу.
+    mode: Literal["fair", "best_effort"] = "fair"
 
 
 class ReadoutSpec(BaseModel):
@@ -120,6 +128,11 @@ class ExperimentSpec(BaseModel):
             protocol.pop("selection_metric", None)
         if protocol.get("seasonal_period") is None:
             protocol.pop("seasonal_period", None)
+        # Значение по умолчанию выбрасывается, иначе добавление поля
+        # переименовало бы каждую уже опубликованную ячейку бандла, ничего в
+        # ней не изменив по существу.
+        if protocol.get("mode") == "fair":
+            protocol.pop("mode", None)
 
         raw = json.dumps(payload, sort_keys=True, default=str)
         return hashlib.sha256(raw.encode()).hexdigest()[:16]

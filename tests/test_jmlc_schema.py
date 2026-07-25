@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -52,12 +55,55 @@ def _metrics(**updates: float | None) -> MetricsResult:
     return MetricsResult(**values)
 
 
+PUBLISHED_ESN_H1_RUN = (
+    Path(__file__).resolve().parents[1]
+    / "reports"
+    / "jmlc_2026"
+    / "fair"
+    / "runs"
+    / "reservoir_esn_h1.json"
+)
+
+
 def test_legacy_reservoir_hash_is_unchanged_by_additive_schema_fields() -> None:
     spec = _legacy_reservoir_spec()
 
     assert spec.model_family == "reservoir"
     assert spec.model_type == "esn"
     assert spec.config_hash() == "610160f0e11c6eb0"
+
+
+def test_default_mode_does_not_change_published_config_hashes() -> None:
+    """Значение по умолчанию выбрасывается из payload, как уже сделано для
+    selection_metric и seasonal_period.
+
+    Иначе добавление поля переименует каждую опубликованную ячейку
+    evidence-бандла: `config_hash` связывает результат, профиль и агрегат, и
+    его смена рвёт traceability, ничего не меняя по существу. Хеш берётся из
+    самой опубликованной записи, а не из строкового литерала, — так тест
+    ломается, если разъедется любая из двух сторон.
+    """
+    published = json.loads(PUBLISHED_ESN_H1_RUN.read_text(encoding="utf-8"))
+    spec = ExperimentSpec.model_validate(published["spec"])
+
+    assert spec.protocol.mode == "fair"
+    assert spec.config_hash() == published["result"]["frozen_config_hash"]
+
+
+def test_best_effort_mode_changes_the_config_hash() -> None:
+    """Режимы обязаны различаться по хешу: иначе fair- и best-effort-ячейка с
+    совпадающими прочими параметрами склеились бы в одну строку агрегата."""
+    published = json.loads(PUBLISHED_ESN_H1_RUN.read_text(encoding="utf-8"))
+    fair = ExperimentSpec.model_validate(published["spec"])
+    best_effort = ExperimentSpec.model_validate(
+        {
+            **published["spec"],
+            "protocol": {**published["spec"]["protocol"], "mode": "best_effort"},
+        }
+    )
+
+    assert best_effort.protocol.mode == "best_effort"
+    assert fair.config_hash() != best_effort.config_hash()
 
 
 @pytest.mark.parametrize(

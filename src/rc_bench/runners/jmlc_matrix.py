@@ -88,6 +88,56 @@ def verify_pinned_raw_digest(template: Dict[str, Any]) -> None:
         )
 
 
+def resolve_mode(template: Dict[str, Any]) -> str:
+    """Режим матрицы: ``fair`` (по умолчанию) или ``best_effort``.
+
+    Режим объявляется в необязательном блоке ``matrix`` шаблона. Блок не
+    входит в ``ExperimentSpec``, поэтому ``rcbench validate-spec`` на шаблоне
+    продолжает работать, а ``build_cell_spec`` переносит режим в протокол
+    каждой ячейки — там его видит и RunRecord, и evidence-гейт.
+    """
+    matrix_mode = (template.get("matrix") or {}).get("mode")
+    protocol_mode = (template.get("protocol") or {}).get("mode")
+
+    # Шаблон может объявить режим дважды: в блоке matrix (его читает раннер) и
+    # в protocol (его видит `rcbench validate-spec`). Расхождение между ними
+    # означает, что один из двух отчётов о шаблоне врёт, поэтому оно
+    # отвергается, а не разрешается в чью-то пользу.
+    if matrix_mode is not None and protocol_mode is not None and matrix_mode != protocol_mode:
+        raise ValueError(
+            f"template declares mode {matrix_mode!r} under 'matrix' but "
+            f"{protocol_mode!r} under 'protocol'; make them agree"
+        )
+
+    mode = matrix_mode if matrix_mode is not None else (protocol_mode or "fair")
+    if mode not in ("fair", "best_effort"):
+        raise ValueError(
+            f"unknown matrix mode {mode!r}; expected 'fair' or 'best_effort'"
+        )
+    return mode
+
+
+def resolve_budget(template: Dict[str, Any], model: str) -> int:
+    """HPO-бюджет одной reservoir-ячейки.
+
+    В fair-режиме бюджет один на всех (DEC-004), поэтому индивидуальный
+    бюджет — не переопределение, а ошибка конфигурации: она означает, что
+    автор хотел best_effort и забыл переключить режим. Выполнить такую
+    конфигурацию молча значит опубликовать неравное сравнение под вывеской
+    равного.
+    """
+    template_budget = int(template["protocol"].get("hpo_budget", 100))
+    budgets = (template.get("matrix") or {}).get("budgets") or {}
+    if not budgets:
+        return template_budget
+    if resolve_mode(template) == "fair":
+        raise ValueError(
+            "per-model hpo budgets are only allowed in best_effort mode; fair "
+            "mode gives every reservoir model the same budget (DEC-004)"
+        )
+    return int(budgets.get(model, template_budget))
+
+
 def build_cell_spec(
     template: Dict[str, Any],
     family: str,
@@ -100,6 +150,10 @@ def build_cell_spec(
     protocol = dict(template["protocol"])
     protocol["forecasting_mode"] = "fixed_horizon"
     protocol["horizon"] = horizon
+    # Режим фиксируется и у детерминированных baseline: по записи должно быть
+    # видно, в какой матрице она получена, даже если сама модель настройки не
+    # имеет.
+    protocol["mode"] = resolve_mode(template)
 
     if family == "baseline":
         protocol = {**protocol, "n_seeds": 0, "use_hpo": False}
@@ -111,6 +165,7 @@ def build_cell_spec(
             seed=None,
         )
     if family == "reservoir":
+        protocol["hpo_budget"] = resolve_budget(template, model)
         return ExperimentSpec(
             dataset=DatasetSpec(**dataset),
             reservoir=ReservoirSpec(type=model, params={}),
