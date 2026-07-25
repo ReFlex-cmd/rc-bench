@@ -2,7 +2,7 @@
 
 Captures CPU model, logical/physical core count, total RAM, OS/platform,
 Python version, and key library versions (numpy, scikit-learn, reservoirpy
-if importable) — the fields required by docs/agent/PROJECT_CONTRACT.md
+if importable) — the fields required by docs/PROJECT_CONTRACT.md
 ("Ресурсный профиль").
 
 DEC-008 requires that published artifacts never contain hostname, username,

@@ -1,6 +1,6 @@
 """Model/state size and isolated peak-RSS profiling (PROF-002/PROF-003).
 
-Covers three measurements from docs/agent/PROJECT_CONTRACT.md
+Covers three measurements from docs/PROJECT_CONTRACT.md
 ("Ресурсный профиль"):
 
 - peak RSS in an isolated process;

@@ -1,6 +1,6 @@
 """Single-step inference latency profiling (PROF-001).
 
-Protocol (see docs/agent/PROJECT_CONTRACT.md, "Ресурсный профиль" /
+Protocol (see docs/PROJECT_CONTRACT.md, "Ресурсный профиль" /
 "Протокол latency"):
 
 - single thread if the numeric backend allows it to be controlled

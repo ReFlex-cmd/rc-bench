@@ -5,6 +5,10 @@
 `fair/runs/` — никакая метрика не пересчитывается вручную и не переписывается
 между документами.
 
+Ссылки вида `DEC-013` указывают на журнал решений
+[docs/DECISIONS.md](../../docs/DECISIONS.md); протокол целиком —
+[docs/PROJECT_CONTRACT.md](../../docs/PROJECT_CONTRACT.md).
+
 Проверка бандла:
 
 ```bash
