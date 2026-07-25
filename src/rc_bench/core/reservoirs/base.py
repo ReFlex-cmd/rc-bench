@@ -74,5 +74,8 @@ class BaseReservoir(ABC):
         ``reservoir_macs`` (умножения-сложения обновления состояния),
         ``reservoir_nonlinearities`` (число вызовов нелинейности),
         ``reservoir_nonzero_recurrent_weights`` (ненулевые элементы W_rec).
+
+        Конвенция MAC-счёта (что именно входит в ``reservoir_macs``, а что
+        нет) описана в docstring модуля ``rc_bench.profiling.activity``.
         """
         return None

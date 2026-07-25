@@ -71,9 +71,13 @@ class LeakyESNReservoir(BaseReservoir):
     def step_operation_counts(self) -> Dict[str, int]:
         nnz = int(np.count_nonzero(self._W_rec))
         return {
-            # W_rec @ x — по одному MAC на ненулевой вес; W_in * u — units MAC;
-            # (1-a)*x + a*pre — ещё 2*units, учтены как смешение.
-            "reservoir_macs": nnz + self._units,
+            # step(): pre = tanh(W_in*u + W_rec@x); x = (1-a)*x + a*pre.
+            #   W_rec @ x       -> nnz MAC (one per nonzero weight)
+            #   W_in * u        -> units MAC (scalar-vector multiply)
+            #   (1-a)*x + a*pre -> 2*units MAC (two scalar-vector multiplies;
+            #                      the final "+" is not counted separately,
+            #                      see activity.py's MAC-counting convention)
+            "reservoir_macs": nnz + 3 * self._units,
             "reservoir_nonlinearities": self._units,
             "reservoir_nonzero_recurrent_weights": nnz,
         }

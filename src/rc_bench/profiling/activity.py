@@ -4,6 +4,25 @@
 состояния, а не измеряются счётчиком. Они не являются энергией и не
 пересчитываются в джоули — ни через TDP, ни как-либо ещё (DEC-007, §5 PDF).
 Публикуются рядом с энергией, но в отдельном блоке ``activity``.
+
+Конвенция MAC-счёта (её придерживается каждая реализация
+``step_operation_counts()`` в ``core/reservoirs/*_service.py``):
+
+- MAC — одна операция умножения-с-накоплением. Скалярно-векторное
+  умножение (например, ``alpha * x``, где ``alpha`` — скаляр, а ``x`` —
+  вектор из ``units`` элементов) стоит один MAC на юнит; произведение
+  матрицы на вектор стоит один MAC на ненулевой вес.
+- Простое сложение, не сопряжённое с умножением (например, добавление
+  несмасштабированного bias-члена, или прибавление спайков напрямую к
+  бегущей сумме), отдельно не считается — счёт отслеживает
+  масштабирующую/смешивающую арифметику, а не каждый ``+``.
+- Применение нелинейной функции (tanh, пороговое сравнение, ...)
+  считается отдельно в ``reservoir_nonlinearities``, один раз на юнит на
+  вызов — и никогда не сворачивается в ``reservoir_macs``.
+
+Docstring/комментарии каждой модели должны перечислять слагаемые её
+``step()`` и показывать, как они ложатся на эту конвенцию, — так формула
+остаётся проверяемой по коду, который она описывает.
 """
 from __future__ import annotations
 
@@ -36,8 +55,29 @@ def state_sparsity(h: np.ndarray, *, near_zero_atol: float = 1e-6) -> Dict[str, 
     }
 
 
-def count_step_operations(reservoir: BaseReservoir, *, readout_units: int) -> Dict[str, Any]:
-    """Аналитическая стоимость одного шага вывода: резервуар + Ridge-выход."""
+def count_step_operations(
+    reservoir: BaseReservoir, *, readout_input_dim: int
+) -> Dict[str, Any]:
+    """Аналитическая стоимость одного шага вывода: резервуар + Ridge-выход.
+
+    Args:
+        reservoir: резервуар, чей ``step_operation_counts()`` описывает
+            стоимость обновления состояния (см. конвенцию MAC-счёта в
+            docstring модуля).
+        readout_input_dim: размерность вектора признаков, подаваемого на
+            вход Ridge-регрессии — то есть число коэффициентов на один
+            выход (обычно совпадает с числом юнитов резервуара, а НЕ с
+            числом выходов модели). Ridge-выход в этом проекте скалярный,
+            поэтому ``readout_macs`` равен ``readout_input_dim`` напрямую
+            (один MAC на коэффициент); для гипотетического многовыходного
+            readout это равенство перестанет быть верным и потребует
+            отдельного учёта — здесь оно не подразумевается автоматически.
+
+    Raises:
+        ValueError: если ``readout_input_dim`` отрицательный.
+    """
+    if readout_input_dim < 0:
+        raise ValueError(f"readout_input_dim must be >= 0, got {readout_input_dim}")
     counts = reservoir.step_operation_counts()
     if counts is None:
         return {
@@ -47,7 +87,7 @@ def count_step_operations(reservoir: BaseReservoir, *, readout_units: int) -> Di
                 "implemented; an operation count is not guessed"
             ),
         }
-    readout_macs = int(readout_units)
+    readout_macs = int(readout_input_dim)
     return {
         "backend": "analytic",
         **{k: int(v) for k, v in counts.items()},

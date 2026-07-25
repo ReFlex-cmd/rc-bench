@@ -127,9 +127,15 @@ class LSMReservoir(BaseReservoir):
         units = int(self._W_rec.shape[0])
         nnz = int(np.count_nonzero(self._W_rec))
         return {
-            # W_rec @ s (nnz) + W_in*u (units) + мембранный распад (units)
-            # + синаптический распад (units).
-            "reservoir_macs": nnz + 3 * units,
+            # step(): I = W_in*u + W_rec@s;
+            #   v = alpha_mem*v + (1-alpha_mem)*I     (outside refractory)
+            #   s = alpha_syn*s + spikes
+            #   W_rec @ s                    -> nnz MAC
+            #   W_in * u                     -> units MAC
+            #   membrane decay (two scalar-vector multiplies) -> 2*units MAC
+            #   synaptic decay: alpha_syn*s   -> units MAC ("+spikes" is an
+            #     unscaled addition, not counted — see activity.py)
+            "reservoir_macs": nnz + 4 * units,
             "reservoir_nonlinearities": units,  # пороговое сравнение на нейрон
             "reservoir_nonzero_recurrent_weights": nnz,
         }

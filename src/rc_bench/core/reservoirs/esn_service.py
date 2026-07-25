@@ -82,7 +82,18 @@ class ESNReservoir(BaseReservoir):
         )
         units = int(self._res.output_dim)
         return {
-            "reservoir_macs": w_nnz + win_nnz,
+            # reservoirpy's Reservoir._step() (nodes/reservoir.py):
+            #   next = f(W@s + Win@x + bias); x = (1-lr)*s + lr*next
+            #   W @ s     -> w_nnz MAC
+            #   Win @ x   -> win_nnz MAC
+            #   "+ bias"  -> not counted: this project never configures a
+            #     bias vector (esn_service.py never passes ``bias=``), so it
+            #     stays reservoirpy's literal ``0.0`` scalar default — an
+            #     unscaled addition, same treatment as other unscaled
+            #     additions elsewhere in this module (see activity.py).
+            #   leak mixing (1-lr)*s + lr*next -> 2*units MAC (two
+            #     scalar-vector multiplies)
+            "reservoir_macs": w_nnz + win_nnz + 2 * units,
             "reservoir_nonlinearities": units,
             "reservoir_nonzero_recurrent_weights": w_nnz,
         }
