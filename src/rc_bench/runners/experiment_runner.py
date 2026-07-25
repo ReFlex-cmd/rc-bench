@@ -11,17 +11,22 @@ from rc_bench.core.reservoirs.base import BaseReservoir
 from rc_bench.core.schema import ExperimentSpec, MetricsResult
 from rc_bench.core.metrics import (
     mae,
+    mae_skill,
+    mase,
     mse,
     rmse,
     nrmse_range,
     nrmse_std,
     nrmse_var,
     prediction_horizon,
+    seasonal_naive_mae_scale,
 )
+from rc_bench.core.baselines import seasonal_persistence_forecast
 from rc_bench.protocol.forecasting import (
     build_one_step_targets,
     build_fixed_horizon_targets,
     closed_loop_predict,
+    aligned_target_positions,
     target_offset,
 )
 from rc_bench.readout.ridge import select_alpha, RidgeReadout
@@ -332,6 +337,27 @@ def run_experiment(
     finally:
         tracemalloc.stop()
 
+    # JMLC baseline-relative metrics (DEC-013): computed for reservoirs too, on
+    # the SAME test target set, so the fair table compares like with like.
+    mase_value = None
+    mae_skill_value = None
+    if spec.protocol.seasonal_period is not None and mode == "fixed_horizon":
+        season = spec.protocol.seasonal_period
+        positions = aligned_target_positions(
+            test_mask, washout, spec.protocol.horizon, mode
+        )
+        seasonal_ref = seasonal_persistence_forecast(
+            np.asarray(data["y_test"], dtype=float), positions, season
+        )
+        seasonal_test_mae = mae(y_te, seasonal_ref)
+        train_values = np.asarray(data["y_train"], dtype=float)
+        train_mask = _target_observed_mask(data, "train", train_values)
+        mase_scale, _ = seasonal_naive_mae_scale(
+            train_values, season, observed_mask=train_mask
+        )
+        mase_value = mase(y_te, y_test_pred, mase_scale)
+        mae_skill_value = mae_skill(mae(y_te, y_test_pred), seasonal_test_mae)
+
     metrics = MetricsResult(
         rmse=rmse(y_te, y_test_pred),
         nrmse_range=nrmse_range(y_te, y_test_pred),
@@ -342,6 +368,8 @@ def run_experiment(
         prediction_horizon=prediction_horizon(y_te, y_test_pred),
         val_nrmse_range=prepared.alpha_info["val_nrmse"],
         val_nrmse_std=prepared.alpha_info.get("val_nrmse_std"),
+        mase=mase_value,
+        mae_skill=mae_skill_value,
         train_time=t_train_end - t_train_start,
         inference_latency=t_infer_end - t_infer_start,
         peak_memory=peak_bytes,

@@ -161,3 +161,32 @@ def test_baseline_and_reservoir_share_observed_test_targets():
     reservoir = run_experiment(data, reservoir_spec, _StubReservoir())
 
     np.testing.assert_array_equal(baseline["y_test"], reservoir["y_test"])
+
+
+def test_reservoir_reports_jmlc_metrics_on_the_same_seasonal_basis():
+    data = _data()
+    reservoir_spec = ExperimentSpec(
+        dataset=DatasetSpec(name="uci_household_power", length=12_000),
+        reservoir=ReservoirSpec(type="esn", params={"scaler": "none"}),
+        protocol=ProtocolSpec(
+            washout=WASHOUT,
+            train_frac=0.6,
+            val_frac=0.2,
+            forecasting_mode="fixed_horizon",
+            horizon=HORIZON,
+            seasonal_period=SEASON,
+        ),
+        readout=ReadoutSpec(alpha_grid=ALPHA_GRID),
+        seed=42,
+    )
+    metrics = run_experiment(data, reservoir_spec, _StubReservoir())["metrics"]
+    assert metrics.mase is not None and np.isfinite(metrics.mase)
+    assert metrics.mae_skill is not None and np.isfinite(metrics.mae_skill)
+
+    # The reservoir's MAE-skill reference must be the seasonal-persistence
+    # baseline evaluated on the same test target set (DEC-013).
+    seasonal = run_baseline(data, _baseline_spec("seasonal_persistence"))
+    implied_reference_mae = metrics.mae / (1.0 - metrics.mae_skill)
+    np.testing.assert_allclose(
+        implied_reference_mae, seasonal["metrics"].mae, rtol=1e-9
+    )
