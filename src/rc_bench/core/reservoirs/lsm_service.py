@@ -122,3 +122,14 @@ class LSMReservoir(BaseReservoir):
         s = self._alpha_syn * s + spikes
         self._step_v, self._step_s, self._step_refrac = v, s, refrac
         return s
+
+    def step_operation_counts(self) -> Dict[str, int]:
+        units = int(self._W_rec.shape[0])
+        nnz = int(np.count_nonzero(self._W_rec))
+        return {
+            # W_rec @ s (nnz) + W_in*u (units) + мембранный распад (units)
+            # + синаптический распад (units).
+            "reservoir_macs": nnz + 3 * units,
+            "reservoir_nonlinearities": units,  # пороговое сравнение на нейрон
+            "reservoir_nonzero_recurrent_weights": nnz,
+        }

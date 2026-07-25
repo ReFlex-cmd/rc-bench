@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import numpy as np
 
 
@@ -65,3 +65,14 @@ class BaseReservoir(ABC):
         for t in range(len(X)):
             h_list.append(self.step(X[t : t + 1]))
         return np.array(h_list)
+
+    def step_operation_counts(self) -> Optional[Dict[str, int]]:
+        """Аналитическая стоимость одного ``step()`` в MAC-операциях.
+
+        Возвращает ``None``, если модель не описала свою арифметику: лучше
+        честное «недоступно», чем правдоподобная выдумка. Ключи:
+        ``reservoir_macs`` (умножения-сложения обновления состояния),
+        ``reservoir_nonlinearities`` (число вызовов нелинейности),
+        ``reservoir_nonzero_recurrent_weights`` (ненулевые элементы W_rec).
+        """
+        return None

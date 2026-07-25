@@ -66,3 +66,23 @@ class ESNReservoir(BaseReservoir):
         """Use reservoirpy's native batch run for efficient warmup."""
         self.reset_state()
         return self._res.run(X)
+
+    def step_operation_counts(self) -> Dict[str, int]:
+        if not self._res.initialized:
+            self._res.run(np.zeros((1, 1)))
+        # reservoirpy uses scipy.sparse when connectivity < 1.0 but falls
+        # back to a dense ndarray at connectivity == 1.0 (our Win default);
+        # only sparse matrices expose ``.nnz``, so count zeros directly for
+        # whichever form W/Win actually took.
+        w_nnz = int(self._res.W.nnz) if hasattr(self._res.W, "nnz") else int(
+            np.count_nonzero(self._res.W)
+        )
+        win_nnz = int(self._res.Win.nnz) if hasattr(self._res.Win, "nnz") else int(
+            np.count_nonzero(self._res.Win)
+        )
+        units = int(self._res.output_dim)
+        return {
+            "reservoir_macs": w_nnz + win_nnz,
+            "reservoir_nonlinearities": units,
+            "reservoir_nonzero_recurrent_weights": w_nnz,
+        }

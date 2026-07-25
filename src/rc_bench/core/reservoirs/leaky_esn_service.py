@@ -67,3 +67,13 @@ class LeakyESNReservoir(BaseReservoir):
         pre = np.tanh(self._W_in[:, 0] * u + self._W_rec @ self._step_x)
         self._step_x = (1.0 - alpha) * self._step_x + alpha * pre
         return self._step_x
+
+    def step_operation_counts(self) -> Dict[str, int]:
+        nnz = int(np.count_nonzero(self._W_rec))
+        return {
+            # W_rec @ x — по одному MAC на ненулевой вес; W_in * u — units MAC;
+            # (1-a)*x + a*pre — ещё 2*units, учтены как смешение.
+            "reservoir_macs": nnz + self._units,
+            "reservoir_nonlinearities": self._units,
+            "reservoir_nonzero_recurrent_weights": nnz,
+        }

@@ -83,3 +83,12 @@ class LogisticReservoir(BaseReservoir):
         x = np.clip(x, 0.0, 1.0)
         self._step_x = x
         return x
+
+    def step_operation_counts(self) -> Dict[str, int]:
+        units = int(self._r.shape[0])
+        return {
+            # r*x*(1-x): 2 MAC на узел; + coupling*(w_in*u): ещё 1.
+            "reservoir_macs": 3 * units,
+            "reservoir_nonlinearities": 0,     # логистическое отображение — сама арифметика
+            "reservoir_nonzero_recurrent_weights": 0,   # межузловых связей нет
+        }
