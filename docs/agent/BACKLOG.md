@@ -59,8 +59,8 @@
 | SELECT-001 | P0 | Выбор Pareto-оптимальной модели под ограничения устройства | ENERGY-003, PROF-004 | 2 ч | DONE (e56b335) |
 | API-001 | P1 | Baseline-спеки и ownership в сервисном контуре | — | 2 ч | DONE (b0f930c; integration-тесты пройдены на docker compose) |
 | EXP-004 | P0 | Перепрогон бандла: fair + best_effort + energy + прокси | все выше | 1 ч + compute | DONE (26bc1e8) |
-| DOC-003 | P0 | Разметка implemented/planned/unavailable, DEC-021…024, обложка репо | EXP-004 | 2 ч | READY |
-| REL-002 | P0 | Релизная ветка, PR `→ main`, разделение контуров | DOC-003 | 1 ч | READY |
+| DOC-003 | P0 | Разметка implemented/planned/unavailable, DEC-021…024, обложка репо | EXP-004 | 2 ч | DONE (24cac4d) |
+| REL-002 | P0 | Релизная ветка, PR `→ main`, разделение контуров | DOC-003 | 1 ч | DONE (0e4d957, PR #2) — merge за человеком |
 
 Ownership: cross-cutting шаги (`core/schema.py`, `reporting/evidence.py`,
 `docs/DECISIONS.md`, `docs/agent/BACKLOG.md`, релиз) — основной агент. Кандидаты на
