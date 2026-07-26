@@ -1,0 +1,349 @@
+{
+  "spec": {
+    "dataset": {
+      "name": "uci_household_power",
+      "length": 12000,
+      "seed": 42,
+      "raw_sha256": "4259c9d7ece5dbee9ab8d53682baac68d791c864f0f64a52b4043cb3b90894b7"
+    },
+    "reservoir": {
+      "type": "esn",
+      "params": {}
+    },
+    "baseline": null,
+    "protocol": {
+      "washout": 200,
+      "train_frac": 0.6,
+      "val_frac": 0.2,
+      "forecasting_mode": "fixed_horizon",
+      "horizon": 1,
+      "use_hpo": true,
+      "hpo_budget": 60,
+      "n_seeds": 5,
+      "selection_metric": "nrmse_std",
+      "seasonal_period": 24,
+      "mode": "best_effort"
+    },
+    "readout": {
+      "type": "ridge",
+      "alpha_grid": [
+        0.001,
+        0.01,
+        0.1,
+        1.0,
+        10.0
+      ]
+    },
+    "seed": 42
+  },
+  "resolved_spec": {
+    "dataset": {
+      "name": "uci_household_power",
+      "length": 12000,
+      "seed": 42,
+      "raw_sha256": "4259c9d7ece5dbee9ab8d53682baac68d791c864f0f64a52b4043cb3b90894b7"
+    },
+    "reservoir": {
+      "type": "esn",
+      "params": {
+        "spectral_radius": 0.9293803964068594,
+        "input_scaling": 0.012790390175145836,
+        "rc_connectivity": 0.061721159481070736
+      }
+    },
+    "baseline": null,
+    "protocol": {
+      "washout": 200,
+      "train_frac": 0.6,
+      "val_frac": 0.2,
+      "forecasting_mode": "fixed_horizon",
+      "horizon": 1,
+      "use_hpo": true,
+      "hpo_budget": 60,
+      "n_seeds": 5,
+      "selection_metric": "nrmse_std",
+      "seasonal_period": 24,
+      "mode": "best_effort"
+    },
+    "readout": {
+      "type": "ridge",
+      "alpha_grid": [
+        0.000023130924416844105
+      ]
+    },
+    "seed": 42
+  },
+  "result": {
+    "status": "completed",
+    "config_hash": "fe4c4566a3765452",
+    "frozen_config_hash": "084344d7b6aa6b80",
+    "resolved_spec": {
+      "dataset": {
+        "name": "uci_household_power",
+        "length": 12000,
+        "seed": 42,
+        "raw_sha256": "4259c9d7ece5dbee9ab8d53682baac68d791c864f0f64a52b4043cb3b90894b7"
+      },
+      "reservoir": {
+        "type": "esn",
+        "params": {
+          "spectral_radius": 0.9293803964068594,
+          "input_scaling": 0.012790390175145836,
+          "rc_connectivity": 0.061721159481070736
+        }
+      },
+      "baseline": null,
+      "protocol": {
+        "washout": 200,
+        "train_frac": 0.6,
+        "val_frac": 0.2,
+        "forecasting_mode": "fixed_horizon",
+        "horizon": 1,
+        "use_hpo": true,
+        "hpo_budget": 60,
+        "n_seeds": 5,
+        "selection_metric": "nrmse_std",
+        "seasonal_period": 24,
+        "mode": "best_effort"
+      },
+      "readout": {
+        "type": "ridge",
+        "alpha_grid": [
+          0.000023130924416844105
+        ]
+      },
+      "seed": 42
+    },
+    "metrics": null,
+    "multi_seed_result": {
+      "n_seeds": 5,
+      "seeds": [
+        42,
+        43,
+        44,
+        45,
+        46
+      ],
+      "metrics_per_seed": [
+        {
+          "rmse": 0.6408841783333157,
+          "nrmse_range": 0.10254310922307805,
+          "nrmse_std": 0.6620330065814369,
+          "nrmse_var": 0.4382877018032569,
+          "mae": 0.44532545298736936,
+          "mse": 0.4107325300379691,
+          "prediction_horizon": 1,
+          "val_nrmse_range": 0.11360285900986143,
+          "val_nrmse_std": 0.651081441939479,
+          "mase": 0.6170324514677451,
+          "mae_skill": 0.403248998432733,
+          "train_time": 0.7768152290000216,
+          "inference_latency": 0.10457800699987274,
+          "peak_memory": 67525224
+        },
+        {
+          "rmse": 0.6463226892561467,
+          "nrmse_range": 0.10341328489354173,
+          "nrmse_std": 0.6676509853977204,
+          "nrmse_var": 0.44575783830254706,
+          "mae": 0.4503194725165229,
+          "mse": 0.4177330186472975,
+          "prediction_horizon": 1,
+          "val_nrmse_range": 0.11453110311286832,
+          "val_nrmse_std": 0.6564014005595793,
+          "mase": 0.6239520472197507,
+          "mae_skill": 0.39655684523134527,
+          "train_time": 0.7890929119998873,
+          "inference_latency": 0.10323118699989209,
+          "peak_memory": 67525300
+        },
+        {
+          "rmse": 0.6431749191122801,
+          "nrmse_range": 0.10290963361210258,
+          "nrmse_std": 0.6643993405563845,
+          "nrmse_var": 0.44142648373175875,
+          "mae": 0.4482123150548976,
+          "mse": 0.4136739765750881,
+          "prediction_horizon": 1,
+          "val_nrmse_range": 0.1140170974329597,
+          "val_nrmse_std": 0.6534555278750639,
+          "mase": 0.621032419506012,
+          "mae_skill": 0.39938050670690095,
+          "train_time": 0.6777341349998096,
+          "inference_latency": 0.08717660699994667,
+          "peak_memory": 67525008
+        },
+        {
+          "rmse": 0.6438572108443648,
+          "nrmse_range": 0.1030188020359309,
+          "nrmse_std": 0.6651041475434011,
+          "nrmse_var": 0.4423635270794343,
+          "mae": 0.4486841068885504,
+          "mse": 0.41455210795628483,
+          "prediction_horizon": 1,
+          "val_nrmse_range": 0.11447924901142716,
+          "val_nrmse_std": 0.6561042139972775,
+          "mase": 0.6216861231507248,
+          "mae_skill": 0.39874828987003497,
+          "train_time": 0.7791829440002402,
+          "inference_latency": 0.09693926899990402,
+          "peak_memory": 67525232
+        },
+        {
+          "rmse": 0.6429754115595574,
+          "nrmse_range": 0.10287771189291944,
+          "nrmse_std": 0.6641932493632642,
+          "nrmse_var": 0.4411526724997312,
+          "mae": 0.4474509160318249,
+          "mse": 0.41341737987018223,
+          "prediction_horizon": 1,
+          "val_nrmse_range": 0.1139271498950719,
+          "val_nrmse_std": 0.6529400199628748,
+          "mase": 0.6199774429655962,
+          "mae_skill": 0.40040080686392765,
+          "train_time": 0.5677898009998898,
+          "inference_latency": 0.1275905050001711,
+          "peak_memory": 67524801
+        }
+      ],
+      "mean": {
+        "rmse": 0.643442881821133,
+        "nrmse_range": 0.10295250833151455,
+        "nrmse_std": 0.6646761458884414,
+        "nrmse_var": 0.4417976446833457,
+        "mae": 0.44799845269583305,
+        "mse": 0.4140218026173644,
+        "prediction_horizon": 1.0,
+        "val_nrmse_range": 0.11411149169243769,
+        "val_nrmse_std": 0.653996520866855,
+        "mase": 0.6207360968619657,
+        "mae_skill": 0.3996670894209884,
+        "train_time": 0.7181230041999698,
+        "inference_latency": 0.10390311499995733,
+        "peak_memory": 67525113.0
+      },
+      "std": {
+        "rmse": 0.001955904867293783,
+        "nrmse_range": 0.00031294978596358054,
+        "nrmse_std": 0.0020204486608629084,
+        "nrmse_var": 0.002686857131430313,
+        "mae": 0.0018267262813932155,
+        "mse": 0.0025179342767375065,
+        "prediction_horizon": 0.0,
+        "val_nrmse_range": 0.00039144558053748124,
+        "val_nrmse_std": 0.0022434554485557187,
+        "mase": 0.0025310688800906657,
+        "mae_skill": 0.002447874314611823,
+        "train_time": 0.09544783137031643,
+        "inference_latency": 0.014918701622945679,
+        "peak_memory": 206.0461113440387
+      }
+    },
+    "hpo_best_params": {
+      "reservoir_params": {
+        "spectral_radius": 0.9293803964068594,
+        "input_scaling": 0.012790390175145836,
+        "rc_connectivity": 0.061721159481070736
+      },
+      "readout_alpha": 0.000023130924416844105
+    },
+    "hpo_convergence": [
+      0.706527500231101,
+      0.699303419442903,
+      0.6781683497824441,
+      0.6698143146491892,
+      0.6698143146491892,
+      0.6590600500965236,
+      0.651081441939479,
+      0.651081441939479,
+      0.651081441939479,
+      0.651081441939479,
+      0.651081441939479,
+      0.651081441939479,
+      0.651081441939479,
+      0.651081441939479,
+      0.651081441939479,
+      0.651081441939479,
+      0.651081441939479,
+      0.651081441939479,
+      0.651081441939479,
+      0.651081441939479,
+      0.651081441939479,
+      0.651081441939479,
+      0.651081441939479,
+      0.651081441939479,
+      0.651081441939479
+    ],
+    "hpo_diagnostics": {
+      "n_trials": 60,
+      "n_completed": 25,
+      "n_pruned": 35,
+      "n_failed": 0,
+      "best_trial_number": 7
+    },
+    "model_family": "reservoir",
+    "deterministic": false,
+    "evaluated_seeds": [
+      42,
+      43,
+      44,
+      45,
+      46
+    ],
+    "selection": {
+      "method": "optuna",
+      "metric": "nrmse_std",
+      "candidates": [],
+      "selected_params": {
+        "reservoir_params": {
+          "spectral_radius": 0.9293803964068594,
+          "input_scaling": 0.012790390175145836,
+          "rc_connectivity": 0.061721159481070736
+        },
+        "readout_alpha": 0.000023130924416844105
+      }
+    },
+    "evaluation": {
+      "target_start_index": 201,
+      "n_test_targets": 2199,
+      "seasonal_period": 24,
+      "mase_scale": 0.7217212837478264,
+      "seasonal_test_mae": 0.7462500302769435,
+      "n_mase_scale_terms": 7084
+    },
+    "energy": {
+      "status": "unavailable",
+      "reason": "No supported hardware energy counter available",
+      "backend": null,
+      "domains": [],
+      "window_target_met": null,
+      "net_energy_per_inference_mj": null,
+      "net_samples_per_joule": null,
+      "energy_delay_product_j_s": null
+    },
+    "artifact_paths": {
+      "predictions": "reports/jmlc_2026/best_effort/artifacts/fe4c4566a3765452_seed42_predictions.npz"
+    },
+    "error": null
+  },
+  "timestamp": "2026-07-25T23:37:39.406509+00:00",
+  "git_hash": "b0f930c",
+  "python_version": "3.12.13",
+  "rc_bench_version": "0.1.0",
+  "lib_versions": {
+    "numpy": "2.3.5",
+    "scipy": "1.16.3",
+    "scikit-learn": "1.7.2",
+    "optuna": "4.9.0",
+    "reservoirpy": "0.4.1",
+    "pydantic": "2.12.5",
+    "matplotlib": "3.10.7"
+  },
+  "hardware_profile": {
+    "cpu_model": "AMD Ryzen 5 7430U with Radeon Graphics",
+    "cpu_count": 12,
+    "platform": "Linux-7.1.3-200.fc44.x86_64-x86_64-with-glibc2.43",
+    "machine": "x86_64",
+    "ram_total_gb": 15.01
+  }
+}

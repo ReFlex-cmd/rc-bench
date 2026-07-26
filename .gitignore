@@ -2,7 +2,6 @@ __pycache__/
 venv/
 .venv/
 .env
-.env.example
 .DS_Store
 .codex
 .pytest_cache/
@@ -17,3 +16,9 @@ outputs/
 reports/jmlc_2026/smoke/
 ansible/inventory.ini
 .claude/
+# Рабочее пространство subagent-driven-development: ledger, брифы, отчёты и
+# пакеты ревью живут только в текущей сессии, в истории им делать нечего.
+.superpowers/
+# Описание проекта передано автором как исходник для планирования; сам
+# документ в репозитории не публикуется.
+03_Project_Description_rc-bench.pdf

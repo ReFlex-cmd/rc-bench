@@ -53,6 +53,14 @@ class ProtocolSpec(BaseModel):
     selection_metric: Literal["nrmse_range", "nrmse_std"] = "nrmse_range"
     # Enables train-only MASE and test seasonal-skill accounting when present.
     seasonal_period: Optional[int] = None
+    # Режим сравнения. ``fair`` — единый вычислительный бюджет и одинаковые
+    # правила отбора для всех reservoir-моделей (DEC-004); ``best_effort`` —
+    # индивидуальная настройка каждой архитектуры. Поле живёт в протоколе, а
+    # не в шаблоне матрицы, чтобы попадать во frozen и resolved spec каждой
+    # ячейки: иначе по самой записи нельзя было бы сказать, в каких условиях
+    # получено число. Результаты двух режимов никогда не сводятся в одну
+    # таблицу.
+    mode: Literal["fair", "best_effort"] = "fair"
 
 
 class ReadoutSpec(BaseModel):
@@ -120,6 +128,11 @@ class ExperimentSpec(BaseModel):
             protocol.pop("selection_metric", None)
         if protocol.get("seasonal_period") is None:
             protocol.pop("seasonal_period", None)
+        # Значение по умолчанию выбрасывается, иначе добавление поля
+        # переименовало бы каждую уже опубликованную ячейку бандла, ничего в
+        # ней не изменив по существу.
+        if protocol.get("mode") == "fair":
+            protocol.pop("mode", None)
 
         raw = json.dumps(payload, sort_keys=True, default=str)
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
@@ -198,12 +211,67 @@ class MultiSeedResult(BaseModel):
     std: MetricsSummary
 
 
-class EnergyResult(BaseModel):
-    """Explicitly unavailable until a supported hardware counter exists."""
+#: Поля, которые есть ровно тогда, когда энергия действительно измерена.
+MEASURED_ENERGY_FIELDS = (
+    "backend",
+    "window_target_met",
+    "net_energy_per_inference_mj",
+    "net_samples_per_joule",
+    "energy_delay_product_j_s",
+)
 
-    status: Literal["unavailable"] = "unavailable"
-    reason: str = "No supported hardware energy counter available"
-    backend: None = None
+
+class EnergyResult(BaseModel):
+    """Энергия вывода: измерена аппаратным счётчиком или явно недоступна.
+
+    Прокси-метрики активности (MAC, разреженность состояния, спайки) сюда не
+    попадают ни при каких условиях — они живут в блоке ``activity`` профиля.
+    Перевод прокси в джоули требует модели энергии железа, которой у нас нет,
+    а число в поле «энергия» читается как измерение (DEC-007).
+
+    ``unavailable`` остаётся значением по умолчанию, поэтому записи, сделанные
+    до появления RAPL-бэкенда, читаются без миграции.
+    """
+
+    status: Literal["measured", "unavailable"] = "unavailable"
+    reason: Optional[str] = "No supported hardware energy counter available"
+    backend: Optional[Literal["intel_rapl"]] = None
+    domains: List[str] = Field(default_factory=list)
+    #: Успело ли окно измерения набрать заданную длительность. ``False``
+    #: означает, что измерение упёрлось в потолок шагов раньше, и его точность
+    #: ограничена периодом обновления счётчика; без этого поля усечённое окно
+    #: было бы неотличимо от полноценного.
+    window_target_met: Optional[bool] = None
+    net_energy_per_inference_mj: Optional[float] = None
+    net_samples_per_joule: Optional[float] = None
+    energy_delay_product_j_s: Optional[float] = None
+
+    @model_validator(mode="after")
+    def _status_and_numbers_must_agree(self) -> "EnergyResult":
+        """Статус и числа — два утверждения об одном факте; расходиться им
+        нельзя. ``measured`` без чисел не говорит, сколько намерено, а числа
+        при ``unavailable`` появились неизвестно откуда."""
+        if self.status == "measured":
+            missing = [
+                name for name in MEASURED_ENERGY_FIELDS if getattr(self, name) is None
+            ]
+            if missing:
+                raise ValueError(f"status='measured' requires {', '.join(missing)}")
+            return self
+
+        # Обратное направление: любое поле, существующее только при измерении,
+        # при 'unavailable' появилось неизвестно откуда. domains проверяется
+        # тоже — список доменов счётчика взять неоткуда, если счётчика не было.
+        present = [
+            name for name in MEASURED_ENERGY_FIELDS if getattr(self, name) is not None
+        ]
+        if self.domains:
+            present.append("domains")
+        if present:
+            raise ValueError(
+                f"status='unavailable' cannot carry {', '.join(present)}"
+            )
+        return self
 
 
 class SelectionCandidate(BaseModel):

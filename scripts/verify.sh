@@ -53,6 +53,17 @@ run_release() {
   require_file "reports/jmlc_2026/README.md"
   require_file "reports/jmlc_2026/dataset_manifest.json"
   require_file "reports/jmlc_2026/hardware_profile.json"
+  # Имя агрегатной таблицы больше не константа внутри валидатора — оно
+  # выводится из режима самих строк. Без этой проверки бандл, в котором
+  # headline-таблицы нет вовсе, прошёл бы гейт зелёным, хотя именно её
+  # читают README бандла и построитель Pareto-диаграмм.
+  require_file "reports/jmlc_2026/aggregates/matrix_table.json"
+  # Второй контур публикуется наравне с первым: бандл, потерявший таблицу
+  # best-effort, молча превратился бы обратно в одномодовый.
+  require_file "reports/jmlc_2026/aggregates/matrix_table_best_effort.json"
+  # Обещание §9 — не диаграммы, а отчёт, по которому можно выбрать модель
+  # под ограничения устройства.
+  require_file "reports/jmlc_2026/selection.md"
   require_file "AI_USAGE.md"
 
   poetry run python scripts/validate_evidence.py reports/jmlc_2026

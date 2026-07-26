@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
 from rc_bench.core.schema import (
     BaselineSpec,
     DatasetSpec,
+    EnergyResult,
     EvaluationContext,
     ExperimentSpec,
     MetricsResult,
@@ -52,12 +56,126 @@ def _metrics(**updates: float | None) -> MetricsResult:
     return MetricsResult(**values)
 
 
+PUBLISHED_ESN_H1_RUN = (
+    Path(__file__).resolve().parents[1]
+    / "reports"
+    / "jmlc_2026"
+    / "fair"
+    / "runs"
+    / "reservoir_esn_h1.json"
+)
+
+
 def test_legacy_reservoir_hash_is_unchanged_by_additive_schema_fields() -> None:
     spec = _legacy_reservoir_spec()
 
     assert spec.model_family == "reservoir"
     assert spec.model_type == "esn"
     assert spec.config_hash() == "610160f0e11c6eb0"
+
+
+def test_default_mode_does_not_change_published_config_hashes() -> None:
+    """Значение по умолчанию выбрасывается из payload, как уже сделано для
+    selection_metric и seasonal_period.
+
+    Иначе добавление поля переименует каждую опубликованную ячейку
+    evidence-бандла: `config_hash` связывает результат, профиль и агрегат, и
+    его смена рвёт traceability, ничего не меняя по существу. Хеш берётся из
+    самой опубликованной записи, а не из строкового литерала, — так тест
+    ломается, если разъедется любая из двух сторон.
+    """
+    published = json.loads(PUBLISHED_ESN_H1_RUN.read_text(encoding="utf-8"))
+    spec = ExperimentSpec.model_validate(published["spec"])
+
+    assert spec.protocol.mode == "fair"
+    assert spec.config_hash() == published["result"]["frozen_config_hash"]
+
+
+def test_best_effort_mode_changes_the_config_hash() -> None:
+    """Режимы обязаны различаться по хешу: иначе fair- и best-effort-ячейка с
+    совпадающими прочими параметрами склеились бы в одну строку агрегата."""
+    published = json.loads(PUBLISHED_ESN_H1_RUN.read_text(encoding="utf-8"))
+    fair = ExperimentSpec.model_validate(published["spec"])
+    best_effort = ExperimentSpec.model_validate(
+        {
+            **published["spec"],
+            "protocol": {**published["spec"]["protocol"], "mode": "best_effort"},
+        }
+    )
+
+    assert best_effort.protocol.mode == "best_effort"
+    assert fair.config_hash() != best_effort.config_hash()
+
+
+class TestEnergyResult:
+    def test_a_measured_backend_is_accepted(self) -> None:
+        measured = EnergyResult(
+            status="measured",
+            backend="intel_rapl",
+            window_target_met=True,
+            net_energy_per_inference_mj=0.0123,
+            net_samples_per_joule=81_300.0,
+            energy_delay_product_j_s=2.7e-10,
+            domains=["package-0"],
+        )
+
+        assert measured.status == "measured"
+        assert measured.domains == ["package-0"]
+
+    def test_a_truncated_window_is_recorded_not_hidden(self) -> None:
+        """Окно, упёршееся в потолок шагов, — всё ещё измерение, но читатель
+        обязан узнать об этом из самой записи."""
+        truncated = EnergyResult(
+            status="measured",
+            backend="intel_rapl",
+            window_target_met=False,
+            net_energy_per_inference_mj=0.0123,
+            net_samples_per_joule=81_300.0,
+            energy_delay_product_j_s=2.7e-10,
+        )
+
+        assert truncated.window_target_met is False
+
+    def test_unavailable_stays_the_default(self) -> None:
+        """Прежние записи читаются без миграции, а машина без счётчика
+        по умолчанию не притворяется измеренной."""
+        default = EnergyResult()
+
+        assert default.status == "unavailable"
+        assert default.backend is None
+        assert default.net_energy_per_inference_mj is None
+
+    @pytest.mark.parametrize(
+        "omitted",
+        [
+            "backend",
+            "window_target_met",
+            "net_energy_per_inference_mj",
+            "net_samples_per_joule",
+            "energy_delay_product_j_s",
+        ],
+    )
+    def test_measured_without_its_numbers_is_refused(self, omitted: str) -> None:
+        """`measured` без числа — худший вид записи: она утверждает, что
+        энергия померена, но не говорит сколько."""
+        payload = {
+            "status": "measured",
+            "backend": "intel_rapl",
+            "window_target_met": True,
+            "net_energy_per_inference_mj": 0.0123,
+            "net_samples_per_joule": 81_300.0,
+            "energy_delay_product_j_s": 2.7e-10,
+        }
+        payload.pop(omitted)
+
+        with pytest.raises(ValidationError, match=omitted):
+            EnergyResult(**payload)
+
+    def test_unavailable_with_numbers_is_refused(self) -> None:
+        """Обратная подмена: числа есть, а статус говорит, что мерить было
+        нечем. Одно из двух утверждений ложно."""
+        with pytest.raises(ValidationError, match="unavailable"):
+            EnergyResult(status="unavailable", net_energy_per_inference_mj=0.0123)
 
 
 @pytest.mark.parametrize(

@@ -39,8 +39,14 @@ def main() -> int:
         print(f"cannot render Pareto figures: {exc}", file=sys.stderr)
         return 1
 
-    for cost, path in written.items():
-        print(f"wrote {path}  ({cost})")
+    # generate_pareto_plots возвращает либо путь, либо "skipped: <причина>":
+    # ось без измерения у всех ячеек не рисуется по остатку. Печатать её как
+    # записанный файл значило бы обещать рисунок, которого нет.
+    for cost, outcome in written.items():
+        if outcome.startswith("skipped:"):
+            print(f"skipped {cost}: {outcome[len('skipped:'):].strip()}")
+        else:
+            print(f"wrote {outcome}  ({cost})")
     return 0
 
 

@@ -83,3 +83,21 @@ class LogisticReservoir(BaseReservoir):
         x = np.clip(x, 0.0, 1.0)
         self._step_x = x
         return x
+
+    def step_operation_counts(self) -> Dict[str, int]:
+        units = int(self._r.shape[0])
+        return {
+            # step(): x = r*x*(1-x) + coupling*(w_in*u).
+            #   r*x*(1-x)          -> 2*units MAC (x*(1-x), then r*(...);
+            #                         two scalar-vector multiplies)
+            #   coupling*(w_in*u)  -> 2*units MAC (w_in*u, then coupling*(...);
+            #                         also two scalar-vector multiplies)
+            #   the final "+" combining the two terms is not counted
+            #   separately, per activity.py's MAC-counting convention.
+            "reservoir_macs": 4 * units,
+            # The logistic map's nonlinearity (the quadratic x*(1-x) term) is
+            # itself pure MAC arithmetic — unlike tanh or a threshold
+            # comparison, there is no separate function call to count.
+            "reservoir_nonlinearities": 0,
+            "reservoir_nonzero_recurrent_weights": 0,   # межузловых связей нет
+        }

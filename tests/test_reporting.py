@@ -208,11 +208,19 @@ class TestEnergyContract:
     def test_pipeline_reports_energy_unavailable(self):
         result = _run()
 
+        # Энергию меряет проход профилирования, а не пайплайн: у пайплайна
+        # нет ни окна измерения, ни базовой линии простоя, поэтому его записи
+        # обязаны оставаться пустыми, а не заполняться правдоподобным.
         assert result.energy == EnergyResult()
         assert result.energy.model_dump() == {
             "status": "unavailable",
             "reason": "No supported hardware energy counter available",
             "backend": None,
+            "domains": [],
+            "window_target_met": None,
+            "net_energy_per_inference_mj": None,
+            "net_samples_per_joule": None,
+            "energy_delay_product_j_s": None,
         }
 
     def test_energy_contract_rejects_claimed_backend(self):

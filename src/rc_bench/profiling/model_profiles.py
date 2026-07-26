@@ -47,7 +47,13 @@ from rc_bench.core.baselines import RIDGE_AR_LAGS, SEASONAL_PERIOD, ar_lag_featu
 from rc_bench.core.data_provider import get_data_for_experiment
 from rc_bench.core.reservoirs.base import BaseReservoir
 from rc_bench.core.reservoirs.registry import get_reservoir
-from rc_bench.core.schema import ExperimentSpec
+from rc_bench.core.schema import EnergyResult, ExperimentSpec
+from rc_bench.profiling.activity import (
+    count_step_operations,
+    spiking_activity,
+    state_sparsity,
+)
+from rc_bench.profiling.energy import energy_backend_status, measure_energy
 from rc_bench.profiling.hardware import get_hardware_profile
 from rc_bench.profiling.latency import measure_latency
 from rc_bench.profiling.memory import (
@@ -458,8 +464,69 @@ def _measure_memory(build_and_run: Callable[[], Any]) -> Dict[str, Any]:
     }
 
 
+#: Окно одного энергетического измерения, с. Счётчик RAPL обновляется с
+#: периодом порядка миллисекунд, поэтому окно должно быть на порядки длиннее;
+#: две секунды дают запас и на медленный шаг, и на шумного соседа по машине.
+DEFAULT_ENERGY_WINDOW_S = 2.0
+
+_ACTIVITY_NOTE = (
+    "analytic/observed proxies; never converted into energy (DEC-007) — "
+    "see the energy block for the measured value"
+)
+
+
+def _checked_energy(measurement: Dict[str, Any]) -> Dict[str, Any]:
+    """Прогнать измерение через EnergyResult перед публикацией.
+
+    Схема запрещает записи, у которых статус и числа расходятся, но до этой
+    проверки её никто не применял к артефакту профиля — а именно он и несёт
+    измеренную энергию. Без неё контракт держался только на честности
+    measure_energy, то есть не держался.
+
+    Возвращается исходный словарь: в нём есть диагностика (длительность окна,
+    число шагов, энергия простоя), которой в схеме нет и которая нужна тому,
+    кто будет разбираться с сомнительным числом.
+    """
+    # Берутся только реально присутствующие ключи: отсутствующий — это не
+    # None, а «поле не заполнялось», и значения по умолчанию у схемы свои.
+    EnergyResult.model_validate(
+        {key: measurement[key] for key in EnergyResult.model_fields if key in measurement}
+    )
+    return measurement
+
+
+def _baseline_activity(*, readout_macs: int, description: str) -> Dict[str, Any]:
+    """Блок activity для детерминированного baseline.
+
+    Резервуара здесь нет, поэтому все резервуарные счётчики — честные нули, а
+    не «неизвестно»: у модели действительно нет ни рекуррентных весов, ни
+    нелинейностей. Разреженность состояния, наоборот, ``None``: рабочее
+    состояние baseline — это окно входного ряда, и доля нулей в нём говорит о
+    данных, а не о стоимости шага.
+    """
+    return {
+        "operations": {
+            "backend": "analytic",
+            "reservoir_macs": 0,
+            "reservoir_nonlinearities": 0,
+            "reservoir_nonzero_recurrent_weights": 0,
+            "readout_macs": int(readout_macs),
+            "total_macs": int(readout_macs),
+            "note": f"analytic MAC estimate ({description}); not an energy measurement",
+        },
+        "state_sparsity": None,
+        "spiking": None,
+        "note": _ACTIVITY_NOTE,
+    }
+
+
 def _profile_reservoir_cell(
-    spec: ExperimentSpec, data: Mapping[str, Any], *, n_steps: int, warmup: int
+    spec: ExperimentSpec,
+    data: Mapping[str, Any],
+    *,
+    n_steps: int,
+    warmup: int,
+    energy_window_s: float,
 ) -> Dict[str, Any]:
     reservoir_config = {"seed": spec.seed, **spec.reservoir.params}
     reservoir = get_reservoir(spec.reservoir.type, reservoir_config)
@@ -500,6 +567,27 @@ def _profile_reservoir_cell(
 
     memory = _measure_memory(build_and_run)
 
+    # Активность снимается до энергетического окна: спайковые счётчики
+    # обнуляются на reset_state(), и после перезапуска резервуара они
+    # описывали бы уже другой прогон.
+    activity = {
+        "operations": count_step_operations(
+            reservoir, readout_input_dim=int(np.asarray(h_sample).reshape(-1).size)
+        ),
+        "state_sparsity": state_sparsity(np.asarray(h_sample)),
+        "spiking": spiking_activity(reservoir),
+        "note": _ACTIVITY_NOTE,
+    }
+
+    reservoir.reset_state()
+    energy = _checked_energy(
+        measure_energy(
+            build_reservoir_compute_step_fn(reservoir, readout, X_test_s),
+            p50_ns=deployable_latency.p50_ns,
+            min_duration_s=energy_window_s,
+        )
+    )
+
     return {
         "protocol": _protocol_block(
             warmup,
@@ -512,11 +600,18 @@ def _profile_reservoir_cell(
         "latency_deployable": deployable_latency.to_dict(),
         "memory": memory,
         "sizes": sizes,
+        "activity": activity,
+        "energy": energy,
     }
 
 
 def _profile_ridge_ar_cell(
-    spec: ExperimentSpec, data: Mapping[str, Any], *, n_steps: int, warmup: int
+    spec: ExperimentSpec,
+    data: Mapping[str, Any],
+    *,
+    n_steps: int,
+    warmup: int,
+    energy_window_s: float,
 ) -> Dict[str, Any]:
     horizon = spec.protocol.horizon
     n_lags = RIDGE_AR_LAGS
@@ -562,6 +657,23 @@ def _profile_ridge_ar_cell(
 
     memory = _measure_memory(build_and_run)
 
+    # Шаг ridge_ar: масштабирование строки признаков ((row - mean) / scale —
+    # одно скалярно-векторное умножение на n_lags) и скалярное произведение с
+    # коэффициентами (ещё n_lags).
+    activity = _baseline_activity(
+        readout_macs=2 * n_lags,
+        description=f"{n_lags}-lag feature scaling plus the ridge dot product",
+    )
+    energy = _checked_energy(
+        measure_energy(
+            build_ridge_ar_compute_step_fn(
+                values, tau, horizon, fit.scaler, fit.final_model, n_lags=n_lags
+            ),
+            p50_ns=deployable_latency.p50_ns,
+            min_duration_s=energy_window_s,
+        )
+    )
+
     return {
         "protocol": _protocol_block(
             warmup,
@@ -575,11 +687,18 @@ def _profile_ridge_ar_cell(
         "latency_deployable": deployable_latency.to_dict(),
         "memory": memory,
         "sizes": sizes,
+        "activity": activity,
+        "energy": energy,
     }
 
 
 def _profile_persistence_family_cell(
-    spec: ExperimentSpec, data: Mapping[str, Any], *, n_steps: int, warmup: int
+    spec: ExperimentSpec,
+    data: Mapping[str, Any],
+    *,
+    n_steps: int,
+    warmup: int,
+    energy_window_s: float,
 ) -> Dict[str, Any]:
     model = spec.model_type
     horizon = spec.protocol.horizon
@@ -619,24 +738,47 @@ def _profile_persistence_family_cell(
 
     memory = _measure_memory(build_and_run)
 
+    # Прогноз — это чтение элемента буфера; арифметики в шаге нет вообще.
+    activity = _baseline_activity(
+        readout_macs=0,
+        description="a buffer lookup performs no multiply-accumulate at all",
+    )
+    energy = _checked_energy(
+        measure_energy(
+            builder(values, tau, lag),
+            p50_ns=latency.p50_ns,
+            min_duration_s=energy_window_s,
+        )
+    )
+
     return {
         "protocol": _protocol_block(warmup, n_steps, step_description, _SAME_AS_IMPLEMENTED),
         "latency": latency.to_dict(),
         "latency_deployable": latency.to_dict(),
         "memory": memory,
         "sizes": sizes,
+        "activity": activity,
+        "energy": energy,
     }
 
 
 def _profile_cell_body(
-    family: str, model: str, spec: ExperimentSpec, data: Mapping[str, Any], *, n_steps: int, warmup: int
+    family: str,
+    model: str,
+    spec: ExperimentSpec,
+    data: Mapping[str, Any],
+    *,
+    n_steps: int,
+    warmup: int,
+    energy_window_s: float = DEFAULT_ENERGY_WINDOW_S,
 ) -> Dict[str, Any]:
+    kwargs = {"n_steps": n_steps, "warmup": warmup, "energy_window_s": energy_window_s}
     if family == "reservoir":
-        return _profile_reservoir_cell(spec, data, n_steps=n_steps, warmup=warmup)
+        return _profile_reservoir_cell(spec, data, **kwargs)
     if model == "ridge_ar":
-        return _profile_ridge_ar_cell(spec, data, n_steps=n_steps, warmup=warmup)
+        return _profile_ridge_ar_cell(spec, data, **kwargs)
     if model in ("persistence", "seasonal_persistence"):
-        return _profile_persistence_family_cell(spec, data, n_steps=n_steps, warmup=warmup)
+        return _profile_persistence_family_cell(spec, data, **kwargs)
     raise ProfilingCellError(f"no profiling strategy for family={family!r} model={model!r}")
 
 
@@ -685,7 +827,12 @@ def _failed_entry(
 
 
 def _profile_one_cell(
-    run_path: Path, data: Mapping[str, Any], *, n_steps: int, warmup: int
+    run_path: Path,
+    data: Mapping[str, Any],
+    *,
+    n_steps: int,
+    warmup: int,
+    energy_window_s: float = DEFAULT_ENERGY_WINDOW_S,
 ) -> Dict[str, Any]:
     try:
         record: RunRecord = load_run_record(run_path)
@@ -707,7 +854,15 @@ def _profile_one_cell(
                 f"spec (expected {expected_name!r})"
             )
 
-        cell = _profile_cell_body(family, model, resolved, data, n_steps=n_steps, warmup=warmup)
+        cell = _profile_cell_body(
+            family,
+            model,
+            resolved,
+            data,
+            n_steps=n_steps,
+            warmup=warmup,
+            energy_window_s=energy_window_s,
+        )
         cell.update(
             family=family,
             model=model,
@@ -749,6 +904,25 @@ def _summary_entry(cell: Dict[str, Any]) -> Dict[str, Any]:
         serialized_model_bytes=sizes["serialized_model_bytes"],
         working_state_bytes=sizes["working_state_bytes"],
     )
+
+    # Ключи выставляются всегда, даже пустые: отсутствие столбца в сводке
+    # неотличимо от несобранного профиля, а None читается однозначно.
+    energy = cell.get("energy") or {"status": "unavailable"}
+    activity = cell.get("activity") or {}
+    operations = activity.get("operations") or {}
+    sparsity = activity.get("state_sparsity") or {}
+    spiking = activity.get("spiking") or {}
+    base.update(
+        energy_status=energy.get("status"),
+        energy_window_target_met=energy.get("window_target_met"),
+        net_energy_per_inference_mj=energy.get("net_energy_per_inference_mj"),
+        net_samples_per_joule=energy.get("net_samples_per_joule"),
+        energy_delay_product_j_s=energy.get("energy_delay_product_j_s"),
+        total_macs=operations.get("total_macs"),
+        state_near_zero_fraction=sparsity.get("near_zero_fraction"),
+        spikes_per_step=spiking.get("spikes_per_step"),
+        synaptic_events_per_step=spiking.get("synaptic_events_per_step"),
+    )
     return base
 
 
@@ -770,23 +944,25 @@ def _load_dataset_params(config_path: "str | Path") -> Dict[str, Any]:
     }
 
 
-def _hardware_artifact(warmup: int, n_steps: int) -> Dict[str, Any]:
+def _hardware_artifact(warmup: int, n_steps: int, energy_window_s: float) -> Dict[str, Any]:
     profile = get_hardware_profile().to_dict()
     profile["measurement_protocol"] = {
         "warmup_steps": warmup,
         "n_steps": n_steps,
         "timer": "perf_counter_ns",
         "single_threaded": True,
+        # Окно энергетического измерения на ячейку: столько же длится прогон
+        # под нагрузкой и столько же — измерение базовой линии простоя.
+        "energy_window_s": energy_window_s,
         "fork_caveat": (
             "Peak RSS is measured in a forked child process, so it inherits "
             "the parent interpreter's resident set; see peak_rss_delta_bytes "
             "in each cell profile for the isolated contribution."
         ),
     }
-    profile["energy"] = {
-        "status": "unavailable",
-        "reason": "no hardware energy counter available on this machine",
-    }
+    # Статус берётся с машины, а не из константы: артефакт должен говорить,
+    # что на ней действительно есть, а не что было при написании кода.
+    profile["energy"] = energy_backend_status()
     return profile
 
 
@@ -798,6 +974,7 @@ def run_profiling_pass(
     *,
     n_steps: int = 1000,
     warmup: int = 100,
+    energy_window_s: float = DEFAULT_ENERGY_WINDOW_S,
     cells: Optional[Sequence[str]] = None,
 ) -> List[Dict[str, Any]]:
     """Profile every RunRecord cell under ``runs_dir`` and write the JMLC
@@ -830,7 +1007,13 @@ def run_profiling_pass(
 
     summary: List[Dict[str, Any]] = []
     for run_path in run_paths:
-        cell = _profile_one_cell(run_path, data, n_steps=n_steps, warmup=warmup)
+        cell = _profile_one_cell(
+            run_path,
+            data,
+            n_steps=n_steps,
+            warmup=warmup,
+            energy_window_s=energy_window_s,
+        )
         family = cell["family"] or "unknown"
         model = cell["model"] or "unknown"
         horizon = cell["horizon"] if cell["horizon"] is not None else "x"
@@ -845,7 +1028,11 @@ def run_profiling_pass(
     hardware_output_path = Path(hardware_output_path)
     hardware_output_path.parent.mkdir(parents=True, exist_ok=True)
     hardware_output_path.write_text(
-        json.dumps(_hardware_artifact(warmup, n_steps), indent=2, ensure_ascii=False)
+        json.dumps(
+            _hardware_artifact(warmup, n_steps, energy_window_s),
+            indent=2,
+            ensure_ascii=False,
+        )
     )
 
     return summary

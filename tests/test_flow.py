@@ -42,19 +42,22 @@ async def test_full_flow(client: AsyncClient):
     # 3. СОЗДАНИЕ ЭКСПЕРИМЕНТА (С токеном)
     # ---------------------------------------------------------
     headers = {"Authorization": f"Bearer {token}"}
+    # Тело запроса — это ExperimentSpec, а не плоская пара (тип, датасет):
+    # сервисный контур и офлайн-раннер обязаны принимать одну и ту же спеку,
+    # иначе воспроизвести через API опубликованный прогон невозможно.
     experiment_payload = {
-        "reservoir_type": "esn",
-        "dataset_name": "narma10",
-        "config": {
-            "n_units": 100,
-            "seed": 777
-        }
+        "dataset": {"name": "narma10", "length": 300, "seed": 777},
+        "reservoir": {"type": "esn", "params": {"units": 20}},
+        "protocol": {"washout": 20, "n_seeds": 1, "use_hpo": False},
+        "readout": {"alpha_grid": [1.0]},
+        "seed": 777,
     }
-    
+
     resp = await client.post("/experiments/", json=experiment_payload, headers=headers)
-    assert resp.status_code == 200
+    assert resp.status_code == 200, resp.text
     exp_data = resp.json()
     assert exp_data["status"] == "QUEUED"
+    assert exp_data["reservoir_type"] == "esn"
     assert exp_data["config"]["seed"] == 777
     exp_id = exp_data["id"]
 

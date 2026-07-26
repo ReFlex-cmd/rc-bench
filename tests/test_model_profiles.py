@@ -21,7 +21,8 @@ import pytest
 from sklearn.linear_model import Ridge
 from sklearn.preprocessing import StandardScaler
 
-from rc_bench.core.baselines import ar_lag_features
+from rc_bench.core.baselines import RIDGE_AR_LAGS, ar_lag_features
+from rc_bench.core.data_provider import get_data_for_experiment
 from rc_bench.core.reservoirs.logistic_service import LogisticReservoir
 from rc_bench.core.schema import (
     BaselineSpec,
@@ -32,6 +33,8 @@ from rc_bench.core.schema import (
     ReservoirSpec,
     ResultSpec,
 )
+from rc_bench.profiling import model_profiles
+from rc_bench.profiling.energy import energy_backend_status
 from rc_bench.profiling.model_profiles import (
     build_persistence_step_fn,
     build_reservoir_compute_step_fn,
@@ -251,6 +254,9 @@ def _write_cell(runs_dir: Path, family: str, model: str, horizon: int, spec: Exp
 
 
 _LENGTH = 240
+#: Настоящее окно RAPL — 2 с на ячейку плюс столько же на базовую линию.
+#: Здесь проверяется структура артефакта, а не физика, поэтому окно короткое.
+_ENERGY_WINDOW_S = 0.01
 _WASHOUT = 5
 _HORIZON = 1
 _SEASON = 6
@@ -270,6 +276,221 @@ def _two_good_cells(runs_dir: Path) -> None:
     )
     _write_cell(runs_dir, "baseline", "persistence", _HORIZON, persistence_spec)
     _write_cell(runs_dir, "reservoir", "logistic", _HORIZON, reservoir_spec)
+
+
+class TestActivityAndEnergyBlocks:
+    """Каждая ячейка профиля обязана нести блок ``activity`` и блок ``energy``
+    с явным статусом. Отсутствующий ключ неотличим от забытого измерения, а
+    прокси-активность и энергия обязаны оставаться разными блоками: перевод
+    MAC в джоули требует модели энергии железа, которой у нас нет (DEC-007).
+    """
+
+    @pytest.fixture
+    def unavailable_energy(self, monkeypatch):
+        """Настоящий measure_energy спит min_duration_s на каждую ячейку —
+        в юнит-тестах меряется структура записи, а не железо."""
+        calls = []
+
+        def fake(step_fn, **kwargs):
+            calls.append(kwargs)
+            step_fn()
+            return {"status": "unavailable", "backend": None, "reason": "test stub"}
+
+        monkeypatch.setattr(model_profiles, "measure_energy", fake)
+        return calls
+
+    def _data(self):
+        return get_data_for_experiment("narma10", length=_LENGTH, train_frac=0.6, val_frac=0.2)
+
+    def _cell(self, family: str, model: str, params: dict | None = None):
+        spec = (
+            _reservoir_spec(
+                model,
+                horizon=_HORIZON,
+                season=_SEASON,
+                washout=_WASHOUT,
+                length=_LENGTH,
+                params=params or {},
+            )
+            if family == "reservoir"
+            else _baseline_spec(
+                model,
+                horizon=_HORIZON,
+                season=_SEASON,
+                # ridge_ar смотрит на 24 лага назад: с washout меньше окна
+                # признаков модель просто не собирается.
+                washout=RIDGE_AR_LAGS + _HORIZON if model == "ridge_ar" else _WASHOUT,
+                length=_LENGTH,
+            )
+        )
+        return model_profiles._profile_cell_body(
+            family, model, spec, self._data(), n_steps=20, warmup=5
+        )
+
+    def test_reservoir_cell_reports_analytic_operations_and_sparsity(
+        self, unavailable_energy
+    ):
+        cell = self._cell("reservoir", "logistic", {"units": 6})
+
+        assert cell["energy"]["status"] == "unavailable"
+        assert cell["activity"]["operations"]["backend"] == "analytic"
+        assert cell["activity"]["operations"]["total_macs"] > 0
+        assert 0.0 <= cell["activity"]["state_sparsity"]["near_zero_fraction"] <= 1.0
+        # Резервуар на tanh/логистическом отображении не спайкует вовсе;
+        # нули здесь читались бы как «прогнали и не спайкнуло».
+        assert cell["activity"]["spiking"] is None
+
+    def test_lsm_cell_reports_spiking_activity(self, unavailable_energy):
+        """Проверка проводки: блок доходит до ячейки и несёт наблюдённые, а не
+        нулевые счётчики. Сама ось (какое именно число считается синаптическим
+        событием) закреплена в tests/test_activity.py."""
+        units, warmup, n_steps = 8, 5, 20
+        spiking = self._cell("reservoir", "lsm", {"units": units})["activity"]["spiking"]
+
+        # Счётчики видели весь измеренный прогон: активность снимается до
+        # энергетического окна именно потому, что reset_state() их обнуляет, и
+        # steps=0 означал бы, что порядок нарушен и в артефакт уходит пустышка.
+        assert spiking["steps"] == warmup + n_steps
+        assert spiking["units"] == units
+        # На этой крошечной конфигурации LIF может не пробить порог ни разу —
+        # это законный ноль. Не законно другое: чтобы на шаг приходилось
+        # спайков больше, чем нейронов, или чтобы средние разошлись с суммой.
+        assert 0.0 <= spiking["spikes_per_step"] <= units
+        assert spiking["spikes_per_step"] == pytest.approx(
+            spiking["total_spikes"] / spiking["steps"]
+        )
+
+    def test_readout_macs_count_the_state_the_readout_actually_sees(
+        self, unavailable_energy
+    ):
+        """Ridge-выход скалярный, значит на один коэффициент — один MAC, а
+        коэффициентов ровно столько, сколько элементов в состоянии."""
+        units = 6
+        cell = self._cell("reservoir", "logistic", {"units": units})
+        operations = cell["activity"]["operations"]
+
+        assert operations["readout_macs"] == units
+        assert (
+            operations["total_macs"]
+            == operations["reservoir_macs"] + operations["readout_macs"]
+        )
+
+    @pytest.mark.parametrize(
+        ("family", "model"), [("baseline", "persistence"), ("baseline", "ridge_ar")]
+    )
+    def test_baseline_cell_has_no_reservoir_activity_but_still_reports_energy(
+        self, unavailable_energy, family, model
+    ):
+        cell = self._cell(family, model)
+
+        assert cell["energy"]["status"] == "unavailable"
+        assert cell["activity"]["operations"]["reservoir_macs"] == 0
+        assert cell["activity"]["spiking"] is None
+        # Рабочее состояние baseline — окно входа, а не состояние модели;
+        # его разреженность ничего не говорит о стоимости шага.
+        assert cell["activity"]["state_sparsity"] is None
+
+    @pytest.mark.parametrize(
+        ("model", "expected_macs"),
+        [
+            # persistence: шаг — чтение элемента кольцевого буфера, арифметики
+            # в нём нет вовсе.
+            ("persistence", 0),
+            # ridge_ar: (row - mean) / scale — одно скалярно-векторное
+            # умножение на n_lags — плюс скалярное произведение с
+            # коэффициентами, ещё n_lags.
+            ("ridge_ar", 2 * RIDGE_AR_LAGS),
+        ],
+    )
+    def test_baseline_readout_macs_match_the_arithmetic_of_the_step(
+        self, unavailable_energy, model, expected_macs
+    ):
+        """Числа уходят в публикуемый артефакт, поэтому закрепляются точным
+        равенством: без него любая правка формулы проходит молча."""
+        operations = self._cell("baseline", model)["activity"]["operations"]
+
+        assert operations["readout_macs"] == expected_macs
+        assert operations["total_macs"] == expected_macs
+
+    def test_energy_is_measured_against_the_deployable_latency(
+        self, unavailable_energy
+    ):
+        """EDP считается из p50 того же шага, что и меряется энергия, —
+        иначе произведение перемножает две разные модели."""
+        cell = self._cell("reservoir", "logistic", {"units": 6})
+
+        assert len(unavailable_energy) == 1
+        assert unavailable_energy[0]["p50_ns"] == cell["latency_deployable"]["p50_ns"]
+
+    def test_summary_entry_exposes_energy_and_activity(self):
+        cell = {
+            "family": "reservoir",
+            "model": "lsm",
+            "horizon": 1,
+            "config_hash": "abc",
+            "status": "completed",
+            "latency": {"p50_ns": 1.0, "p95_ns": 2.0, "throughput_samples_per_s": 3.0},
+            "latency_deployable": {
+                "p50_ns": 1.0,
+                "p95_ns": 2.0,
+                "throughput_samples_per_s": 3.0,
+            },
+            "memory": {"peak_rss_bytes": 1, "peak_rss_delta_bytes": 2},
+            "sizes": {"serialized_model_bytes": 3, "working_state_bytes": 4},
+            "energy": {
+                "status": "measured",
+                "net_energy_per_inference_mj": 0.0123,
+                "net_samples_per_joule": 81_300.0,
+                "energy_delay_product_j_s": 2.7e-10,
+            },
+            "activity": {
+                "operations": {"total_macs": 512},
+                "state_sparsity": {"near_zero_fraction": 0.25},
+                "spiking": {"spikes_per_step": 1.5, "synaptic_events_per_step": 9.0},
+            },
+        }
+
+        entry = model_profiles._summary_entry(cell)
+
+        assert entry["energy_status"] == "measured"
+        assert entry["net_energy_per_inference_mj"] == pytest.approx(0.0123)
+        assert entry["energy_delay_product_j_s"] == pytest.approx(2.7e-10)
+        assert entry["total_macs"] == 512
+        assert entry["state_near_zero_fraction"] == pytest.approx(0.25)
+        assert entry["spikes_per_step"] == pytest.approx(1.5)
+        assert entry["synaptic_events_per_step"] == pytest.approx(9.0)
+
+    def test_summary_entry_of_a_cell_without_spikes_says_none(self):
+        """Ключ обязан присутствовать со значением None: отсутствие ключа в
+        таблице неотличимо от того, что профиль не собрали."""
+        cell = {
+            "family": "reservoir",
+            "model": "logistic",
+            "horizon": 1,
+            "config_hash": "abc",
+            "status": "completed",
+            "latency": {"p50_ns": 1.0, "p95_ns": 2.0, "throughput_samples_per_s": 3.0},
+            "latency_deployable": {
+                "p50_ns": 1.0,
+                "p95_ns": 2.0,
+                "throughput_samples_per_s": 3.0,
+            },
+            "memory": {"peak_rss_bytes": 1, "peak_rss_delta_bytes": 2},
+            "sizes": {"serialized_model_bytes": 3, "working_state_bytes": 4},
+            "energy": {"status": "unavailable"},
+            "activity": {
+                "operations": {"total_macs": 42},
+                "state_sparsity": {"near_zero_fraction": 0.0},
+                "spiking": None,
+            },
+        }
+
+        entry = model_profiles._summary_entry(cell)
+
+        assert entry["energy_status"] == "unavailable"
+        assert entry["net_energy_per_inference_mj"] is None
+        assert entry["spikes_per_step"] is None
+        assert entry["synaptic_events_per_step"] is None
 
 
 class TestDeployableStepEquivalence:
@@ -341,6 +562,7 @@ def test_full_pass_writes_sanitized_per_cell_and_summary_json(tmp_path):
         hardware_output_path=hardware_output,
         n_steps=5,
         warmup=2,
+        energy_window_s=_ENERGY_WINDOW_S,
     )
 
     assert len(summary) == 2
@@ -387,12 +609,14 @@ def test_full_pass_writes_sanitized_per_cell_and_summary_json(tmp_path):
     assert "/home/" not in hw_text
     assert '"hostname"' not in hw_text
     hw_payload = json.loads(hw_text)
-    assert hw_payload["energy"] == {
-        "status": "unavailable",
-        "reason": "no hardware energy counter available on this machine",
-    }
+    # Статус энергетического бэкенда зависит от машины, поэтому тест сверяет
+    # артефакт с тем, что эта машина сообщает сейчас, а не с константой:
+    # прибитое "unavailable" продолжало бы проходить и на хосте со счётчиком.
+    assert hw_payload["energy"] == energy_backend_status()
+    assert hw_payload["energy"]["status"] in ("available", "unavailable")
     assert "measurement_protocol" in hw_payload
     assert hw_payload["measurement_protocol"]["n_steps"] == 5
+    assert hw_payload["measurement_protocol"]["energy_window_s"] == _ENERGY_WINDOW_S
 
 
 def test_cell_that_fails_to_build_is_recorded_failed_and_pass_continues(tmp_path):
@@ -425,6 +649,7 @@ def test_cell_that_fails_to_build_is_recorded_failed_and_pass_continues(tmp_path
         hardware_output_path=hardware_output,
         n_steps=5,
         warmup=2,
+        energy_window_s=_ENERGY_WINDOW_S,
     )
 
     assert len(summary) == 2  # both cells recorded, never dropped
@@ -465,6 +690,7 @@ def test_mismatched_filename_is_recorded_as_failed(tmp_path):
         hardware_output_path=hardware_output,
         n_steps=5,
         warmup=2,
+        energy_window_s=_ENERGY_WINDOW_S,
     )
 
     assert len(summary) == 1
@@ -507,6 +733,7 @@ def test_cli_process_exits_nonzero_when_a_cell_fails(tmp_path):
             "--hardware-output", str(hardware_output),
             "--n-steps", "5",
             "--warmup", "2",
+            "--energy-window-s", str(_ENERGY_WINDOW_S),
         ],
         capture_output=True,
         text=True,
@@ -534,6 +761,7 @@ def test_cli_process_exits_zero_when_all_cells_succeed(tmp_path):
             "--hardware-output", str(hardware_output),
             "--n-steps", "5",
             "--warmup", "2",
+            "--energy-window-s", str(_ENERGY_WINDOW_S),
         ],
         capture_output=True,
         text=True,

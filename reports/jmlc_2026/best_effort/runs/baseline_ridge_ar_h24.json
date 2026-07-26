@@ -1,0 +1,222 @@
+{
+  "spec": {
+    "dataset": {
+      "name": "uci_household_power",
+      "length": 12000,
+      "seed": 42,
+      "raw_sha256": "4259c9d7ece5dbee9ab8d53682baac68d791c864f0f64a52b4043cb3b90894b7"
+    },
+    "reservoir": null,
+    "baseline": {
+      "type": "ridge_ar",
+      "params": {}
+    },
+    "protocol": {
+      "washout": 200,
+      "train_frac": 0.6,
+      "val_frac": 0.2,
+      "forecasting_mode": "fixed_horizon",
+      "horizon": 24,
+      "use_hpo": false,
+      "hpo_budget": 60,
+      "n_seeds": 0,
+      "selection_metric": "nrmse_std",
+      "seasonal_period": 24,
+      "mode": "best_effort"
+    },
+    "readout": {
+      "type": "ridge",
+      "alpha_grid": [
+        0.001,
+        0.01,
+        0.1,
+        1.0,
+        10.0
+      ]
+    },
+    "seed": null
+  },
+  "resolved_spec": {
+    "dataset": {
+      "name": "uci_household_power",
+      "length": 12000,
+      "seed": 42,
+      "raw_sha256": "4259c9d7ece5dbee9ab8d53682baac68d791c864f0f64a52b4043cb3b90894b7"
+    },
+    "reservoir": null,
+    "baseline": {
+      "type": "ridge_ar",
+      "params": {}
+    },
+    "protocol": {
+      "washout": 200,
+      "train_frac": 0.6,
+      "val_frac": 0.2,
+      "forecasting_mode": "fixed_horizon",
+      "horizon": 24,
+      "use_hpo": false,
+      "hpo_budget": 60,
+      "n_seeds": 0,
+      "selection_metric": "nrmse_std",
+      "seasonal_period": 24,
+      "mode": "best_effort"
+    },
+    "readout": {
+      "type": "ridge",
+      "alpha_grid": [
+        0.001,
+        0.01,
+        0.1,
+        1.0,
+        10.0
+      ]
+    },
+    "seed": null
+  },
+  "result": {
+    "status": "completed",
+    "config_hash": "40f697e167379d4d",
+    "frozen_config_hash": "40f697e167379d4d",
+    "resolved_spec": {
+      "dataset": {
+        "name": "uci_household_power",
+        "length": 12000,
+        "seed": 42,
+        "raw_sha256": "4259c9d7ece5dbee9ab8d53682baac68d791c864f0f64a52b4043cb3b90894b7"
+      },
+      "reservoir": null,
+      "baseline": {
+        "type": "ridge_ar",
+        "params": {}
+      },
+      "protocol": {
+        "washout": 200,
+        "train_frac": 0.6,
+        "val_frac": 0.2,
+        "forecasting_mode": "fixed_horizon",
+        "horizon": 24,
+        "use_hpo": false,
+        "hpo_budget": 60,
+        "n_seeds": 0,
+        "selection_metric": "nrmse_std",
+        "seasonal_period": 24,
+        "mode": "best_effort"
+      },
+      "readout": {
+        "type": "ridge",
+        "alpha_grid": [
+          0.001,
+          0.01,
+          0.1,
+          1.0,
+          10.0
+        ]
+      },
+      "seed": null
+    },
+    "metrics": {
+      "rmse": 0.8698587598332775,
+      "nrmse_range": 0.13917962844737952,
+      "nrmse_std": 0.9023446669286984,
+      "nrmse_var": 0.8142258979346638,
+      "mae": 0.6557048927676027,
+      "mse": 0.7566542620586877,
+      "prediction_horizon": 1,
+      "val_nrmse_range": 0.15432871108480536,
+      "val_nrmse_std": 0.8849723900754269,
+      "mase": 0.9085292446449588,
+      "mae_skill": 0.11995806822671129,
+      "train_time": 0.017684193000150117,
+      "inference_latency": 0.0004692900001828093,
+      "peak_memory": 8127186
+    },
+    "multi_seed_result": null,
+    "hpo_best_params": null,
+    "hpo_convergence": null,
+    "hpo_diagnostics": null,
+    "model_family": "baseline",
+    "deterministic": true,
+    "evaluated_seeds": [],
+    "selection": {
+      "method": "fixed_grid",
+      "metric": "nrmse_std",
+      "candidates": [
+        {
+          "params": {
+            "alpha": 0.001
+          },
+          "score": 0.8849723900754269
+        },
+        {
+          "params": {
+            "alpha": 0.01
+          },
+          "score": 0.8849723985921288
+        },
+        {
+          "params": {
+            "alpha": 0.1
+          },
+          "score": 0.8849724837749091
+        },
+        {
+          "params": {
+            "alpha": 1.0
+          },
+          "score": 0.8849733371778841
+        },
+        {
+          "params": {
+            "alpha": 10.0
+          },
+          "score": 0.8849820277966811
+        }
+      ],
+      "selected_params": {
+        "alpha": 0.001
+      }
+    },
+    "evaluation": {
+      "target_start_index": 224,
+      "n_test_targets": 2176,
+      "seasonal_period": 24,
+      "mase_scale": 0.7217212837478264,
+      "seasonal_test_mae": 0.7450836932807897,
+      "n_mase_scale_terms": 7084
+    },
+    "energy": {
+      "status": "unavailable",
+      "reason": "No supported hardware energy counter available",
+      "backend": null,
+      "domains": [],
+      "window_target_met": null,
+      "net_energy_per_inference_mj": null,
+      "net_samples_per_joule": null,
+      "energy_delay_product_j_s": null
+    },
+    "artifact_paths": {
+      "predictions": "reports/jmlc_2026/best_effort/artifacts/40f697e167379d4d_deterministic_predictions.npz"
+    },
+    "error": null
+  },
+  "timestamp": "2026-07-25T23:37:12.490756+00:00",
+  "git_hash": "b0f930c",
+  "python_version": "3.12.13",
+  "rc_bench_version": "0.1.0",
+  "lib_versions": {
+    "numpy": "2.3.5",
+    "scipy": "1.16.3",
+    "scikit-learn": "1.7.2",
+    "optuna": "4.9.0",
+    "reservoirpy": "0.4.1",
+    "pydantic": "2.12.5",
+    "matplotlib": "3.10.7"
+  },
+  "hardware_profile": {
+    "cpu_model": "AMD Ryzen 5 7430U with Radeon Graphics",
+    "cpu_count": 12,
+    "platform": "Linux-7.1.3-200.fc44.x86_64-x86_64-with-glibc2.43",
+    "machine": "x86_64",
+    "ram_total_gb": 15.01
+  }
+}

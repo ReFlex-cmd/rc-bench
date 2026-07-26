@@ -21,7 +21,8 @@
       "hpo_budget": 20,
       "n_seeds": 0,
       "selection_metric": "nrmse_std",
-      "seasonal_period": 24
+      "seasonal_period": 24,
+      "mode": "fair"
     },
     "readout": {
       "type": "ridge",
@@ -57,7 +58,8 @@
       "hpo_budget": 20,
       "n_seeds": 0,
       "selection_metric": "nrmse_std",
-      "seasonal_period": 24
+      "seasonal_period": 24,
+      "mode": "fair"
     },
     "readout": {
       "type": "ridge",
@@ -97,7 +99,8 @@
         "hpo_budget": 20,
         "n_seeds": 0,
         "selection_metric": "nrmse_std",
-        "seasonal_period": 24
+        "seasonal_period": 24,
+        "mode": "fair"
       },
       "readout": {
         "type": "ridge",
@@ -123,8 +126,8 @@
       "val_nrmse_std": 1.080075719579498,
       "mase": 1.0323704040036683,
       "mae_skill": 0.0,
-      "train_time": 0.00005585301551036537,
-      "inference_latency": 0.000020511011825874448,
+      "train_time": 0.00007814399987182696,
+      "inference_latency": 0.00002616099982333253,
       "peak_memory": 52936
     },
     "multi_seed_result": null,
@@ -151,15 +154,20 @@
     "energy": {
       "status": "unavailable",
       "reason": "No supported hardware energy counter available",
-      "backend": null
+      "backend": null,
+      "domains": [],
+      "window_target_met": null,
+      "net_energy_per_inference_mj": null,
+      "net_samples_per_joule": null,
+      "energy_delay_product_j_s": null
     },
     "artifact_paths": {
       "predictions": "reports/jmlc_2026/fair/artifacts/055f17bcba6dd6e4_deterministic_predictions.npz"
     },
     "error": null
   },
-  "timestamp": "2026-07-25T01:32:24.490463+00:00",
-  "git_hash": "c564b6e",
+  "timestamp": "2026-07-25T23:34:50.120360+00:00",
+  "git_hash": "b0f930c",
   "python_version": "3.12.13",
   "rc_bench_version": "0.1.0",
   "lib_versions": {

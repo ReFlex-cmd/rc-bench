@@ -18,10 +18,14 @@
     "n_steps": 1000,
     "timer": "perf_counter_ns",
     "single_threaded": true,
+    "energy_window_s": 2.0,
     "fork_caveat": "Peak RSS is measured in a forked child process, so it inherits the parent interpreter's resident set; see peak_rss_delta_bytes in each cell profile for the isolated contribution."
   },
   "energy": {
-    "status": "unavailable",
-    "reason": "no hardware energy counter available on this machine"
+    "status": "available",
+    "backend": "intel_rapl",
+    "domains": [
+      "package-0"
+    ]
   }
 }

@@ -23,6 +23,12 @@ from pydantic import ValidationError
 from rich.console import Console
 from rich.table import Table
 
+from rc_bench.reporting.selection import (
+    DeviceConstraints,
+    render_markdown,
+    select,
+)
+
 app = typer.Typer(
     name="rcbench",
     help="RC-Bench: reproducible reservoir computing benchmark suite.",
@@ -467,6 +473,55 @@ def eda_cmd(
     console.print("[green]EDA complete[/green]")
     for path in paths:
         console.print(f"  {path.relative_to(output_dir).as_posix()}")
+
+
+@app.command("select")
+def select_command(
+    bundle: Path = typer.Option(..., "--bundle", help="Evidence bundle directory."),
+    horizon: int = typer.Option(1, "--horizon", help="Forecast horizon to select for."),
+    max_latency_us: Optional[float] = typer.Option(
+        None, "--max-latency-us", help="Budget for the deployable p50 step latency."
+    ),
+    max_state_bytes: Optional[int] = typer.Option(
+        None, "--max-state-bytes", help="Budget for the working state."
+    ),
+    max_model_bytes: Optional[int] = typer.Option(
+        None, "--max-model-bytes", help="Budget for the serialized model."
+    ),
+    max_energy_mj: Optional[float] = typer.Option(
+        None,
+        "--max-energy-mj",
+        help=(
+            "Budget for the energy of one inference; ignored (and said so in "
+            "the report) when the bundle carries no energy measurement."
+        ),
+    ),
+    output: Optional[Path] = typer.Option(
+        None, "--output", help="Also write the Markdown report to this path."
+    ),
+) -> None:
+    """Find the Pareto-optimal model that fits a device's budget."""
+    constraints = DeviceConstraints(
+        max_p50_us=max_latency_us,
+        max_state_bytes=max_state_bytes,
+        max_model_bytes=max_model_bytes,
+        max_energy_mj=max_energy_mj,
+    )
+    try:
+        report = select(bundle, horizon=horizon, constraints=constraints)
+    except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+        console.print(f"[red]Selection failed:[/red] {exc}")
+        raise typer.Exit(1)
+
+    markdown = render_markdown(report)
+    # print, а не console.print: rich разметил бы Markdown-таблицу по-своему,
+    # и вывод перестал бы совпадать с файлом, который пишет --output.
+    print(markdown)
+
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(markdown, encoding="utf-8")
+        console.print(f"[green]Wrote[/green] {output}")
 
 
 # ---------------------------------------------------------------------------

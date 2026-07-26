@@ -66,3 +66,34 @@ class ESNReservoir(BaseReservoir):
         """Use reservoirpy's native batch run for efficient warmup."""
         self.reset_state()
         return self._res.run(X)
+
+    def step_operation_counts(self) -> Dict[str, int]:
+        if not self._res.initialized:
+            self._res.run(np.zeros((1, 1)))
+        # reservoirpy uses scipy.sparse when connectivity < 1.0 but falls
+        # back to a dense ndarray at connectivity == 1.0 (our Win default);
+        # only sparse matrices expose ``.nnz``, so count zeros directly for
+        # whichever form W/Win actually took.
+        w_nnz = int(self._res.W.nnz) if hasattr(self._res.W, "nnz") else int(
+            np.count_nonzero(self._res.W)
+        )
+        win_nnz = int(self._res.Win.nnz) if hasattr(self._res.Win, "nnz") else int(
+            np.count_nonzero(self._res.Win)
+        )
+        units = int(self._res.output_dim)
+        return {
+            # reservoirpy's Reservoir._step() (nodes/reservoir.py):
+            #   next = f(W@s + Win@x + bias); x = (1-lr)*s + lr*next
+            #   W @ s     -> w_nnz MAC
+            #   Win @ x   -> win_nnz MAC
+            #   "+ bias"  -> not counted: this project never configures a
+            #     bias vector (esn_service.py never passes ``bias=``), so it
+            #     stays reservoirpy's literal ``0.0`` scalar default — an
+            #     unscaled addition, same treatment as other unscaled
+            #     additions elsewhere in this module (see activity.py).
+            #   leak mixing (1-lr)*s + lr*next -> 2*units MAC (two
+            #     scalar-vector multiplies)
+            "reservoir_macs": w_nnz + win_nnz + 2 * units,
+            "reservoir_nonlinearities": units,
+            "reservoir_nonzero_recurrent_weights": w_nnz,
+        }

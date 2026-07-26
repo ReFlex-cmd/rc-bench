@@ -25,7 +25,10 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from rc_bench.profiling.model_profiles import run_profiling_pass  # noqa: E402
+from rc_bench.profiling.model_profiles import (  # noqa: E402
+    DEFAULT_ENERGY_WINDOW_S,
+    run_profiling_pass,
+)
 
 
 def main() -> int:
@@ -38,6 +41,16 @@ def main() -> int:
     parser.add_argument("--hardware-output", required=True, help="output path for the hardware profile")
     parser.add_argument("--n-steps", type=int, default=1000, help="measured inference steps per cell")
     parser.add_argument("--warmup", type=int, default=100, help="untimed warmup steps per cell")
+    parser.add_argument(
+        "--energy-window-s",
+        type=float,
+        default=DEFAULT_ENERGY_WINDOW_S,
+        help=(
+            "duration of one RAPL measurement window per cell, in seconds "
+            "(the idle baseline takes the same again); the value used is "
+            f"recorded in the hardware profile (default: {DEFAULT_ENERGY_WINDOW_S})"
+        ),
+    )
     parser.add_argument(
         "--cells",
         nargs="*",
@@ -53,6 +66,7 @@ def main() -> int:
         hardware_output_path=args.hardware_output,
         n_steps=args.n_steps,
         warmup=args.warmup,
+        energy_window_s=args.energy_window_s,
         cells=args.cells,
     )
 

@@ -110,21 +110,48 @@ Headline: `NRMSE_std`.
 
 ## Energy
 
-Аппаратного счётчика нет. Полноценный energy-блок исключён из обязательного объёма.
+Счётчик Intel RAPL доступен и используется (DEC-021). Измерение идёт по
+package-домену `/sys/class/powercap/intel-rapl:N`, с вычитанием базовой линии
+простоя и окном не короче 2 с; подробности протокола — в `reports/jmlc_2026/README.md`.
 
-Обязательное представление:
+Обязательное представление при наличии счётчика:
+
+```json
+{
+  "energy": {
+    "status": "measured",
+    "backend": "intel_rapl",
+    "domains": ["package-0"],
+    "window_target_met": true,
+    "net_energy_per_inference_mj": 0.1297,
+    "net_samples_per_joule": 7708.0,
+    "energy_delay_product_j_s": 2.77e-12
+  }
+}
+```
+
+При отсутствии счётчика, недоступности файла счётчика (root-only с
+CVE-2020-8694) или окне короче периода обновления счётчика — обязательный
+явный отказ с причиной:
 
 ```json
 {
   "energy": {
     "status": "unavailable",
-    "reason": "No supported hardware energy counter available",
+    "reason": "<конкретная причина>",
     "backend": null
   }
 }
 ```
 
-Запрещено оценивать энергию через TDP, CPU time или паспортную мощность. Operation count, state sparsity, spikes и synaptic events допустимы только как отдельно подписанные activity proxies и имеют приоритет P1, а не P0.
+Схема (`EnergyResult`) запрещает промежуточные состояния в обе стороны:
+`measured` без чисел и числа при `unavailable` не проходят валидацию, и
+профиль прогоняет свой блок через неё перед записью.
+
+Запрещено оценивать энергию через TDP, CPU time или паспортную мощность.
+Operation count, state sparsity, spikes и synaptic events публикуются только
+как отдельно подписанные activity proxies в блоке `activity` и никогда не
+пересчитываются в джоули (DEC-022).
 
 ## Evidence bundle
 
@@ -135,14 +162,26 @@ reports/jmlc_2026/
 ├── README.md
 ├── dataset_manifest.json
 ├── hardware_profile.json
-├── specs/
-│   ├── frozen/
-│   └── resolved/
-├── hpo/
-├── runs/
-├── aggregates/
-└── plots/
+├── fair/
+│   ├── runs/            # RunRecord каждой ячейки
+│   ├── artifacts/       # предсказания и таргеты
+│   └── summary.json
+├── best_effort/         # второй контур, та же раскладка
+├── profiles/            # ресурсный профиль + activity + energy (только fair)
+├── aggregates/          # matrix_table[_best_effort].{json,csv}, eda_*
+├── plots/               # pareto_quality_{latency,memory,energy}.png, eda_*
+└── selection.md         # выбор модели под ограничения устройства
 ```
+
+**Расхождение с раскладкой выше по тексту, которое проверяющему нужно знать.**
+Отдельных каталогов `specs/frozen/`, `specs/resolved/` и `hpo/` в бандле нет:
+frozen-спека, resolved-спека и траектория HPO физически лежат внутри каждого
+RunRecord (`fair/runs/*.json`, поля `spec`, `resolved_spec`,
+`result.selection.candidates`). Информация не потеряна — она собрана в одном
+файле на ячейку, чтобы результат нельзя было отделить от спеки, которая его
+породила. Каталог `runs/` находится не в корне бандла, а внутри контура
+режима, потому что контуров теперь два и сводить их в один каталог значило бы
+смешивать результаты, полученные по разным правилам (DEC-023).
 
 Каждый результат должен позволять восстановить:
 
@@ -162,5 +201,5 @@ reports/jmlc_2026/
 - Инженерия: self-contained unit tests, CI, CLI smoke, воспроизводимый запуск.
 - Data Science: реальный ряд, отдельный EDA, causal preprocessing, baselines и fair protocol.
 - AI-инструменты: `AI_USAGE.md`, разделение работы агентов, ручная проверка, тесты и evidence.
-- Продуктовое мышление: Pareto quality-latency и quality-memory, сценарий выбора модели под ограничение устройства.
+- Продуктовое мышление: Pareto quality-latency, quality-memory и quality-energy, сценарий выбора модели под ограничение устройства (`selection.md`, `rcbench select`).
 - Честность: energy unavailable, planned и implemented результаты не смешиваются.
