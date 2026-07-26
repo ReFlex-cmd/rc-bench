@@ -139,15 +139,22 @@ pip install -e .
 
 ### Запуск через CLI
 
-После установки доступна команда `rcbench`:
+`poetry install` кладёт `rcbench` в изолированный venv Poetry
+(`~/.cache/pypoetry/virtualenvs/...`), а не в системный `PATH` — голый
+`rcbench` в новом терминале ответит `command not found`. Запускайте через
+`poetry run`:
 
 ```bash
 # Список доступных датасетов
-rcbench list-datasets
+poetry run rcbench list-datasets
 
 # Список зарегистрированных типов резервуаров
-rcbench list-reservoirs
+poetry run rcbench list-reservoirs
 ```
+
+Либо активируйте окружение один раз на сессию (`poetry env activate` выводит
+команду активации; в старых версиях Poetry — `poetry shell`) и дальше
+пользуйтесь голым `rcbench`.
 
 Минимальный эксперимент описывается JSON/YAML-спецификацией. Создайте `spec.yaml`:
 
@@ -173,16 +180,16 @@ seed: 42
 
 ```bash
 # Валидация спецификации
-rcbench validate-spec spec.yaml
+poetry run rcbench validate-spec spec.yaml
 
 # Запуск эксперимента с сохранением результата
-rcbench run spec.yaml --output run.json
+poetry run rcbench run spec.yaml --output run.json
 
 # Сводная таблица по нескольким run-record файлам
-rcbench aggregate reports/runs --sort-by nrmse_range --top 10
+poetry run rcbench aggregate reports/runs --sort-by nrmse_range --top 10
 
 # Markdown/CSV-отчёт + график сравнения
-rcbench report reports/runs --metric nrmse_range
+poetry run rcbench report reports/runs --metric nrmse_range
 ```
 
 ## Docker-деплой
@@ -203,7 +210,8 @@ docker compose up -d --build
 docker compose ps
 ```
 
-После старта API доступен через Nginx на `http://localhost:80`. Сервисы:
+После старта API доступен через Nginx на `http://localhost` (порт 80, можно
+не указывать). Сервисы:
 
 | Сервис | Образ / сборка | Назначение |
 |---|---|---|
@@ -212,6 +220,32 @@ docker compose ps
 | `worker` | сборка из `Dockerfile` | Celery-воркер для фоновых прогонов |
 | `db` | `postgres:15-alpine` | Хранилище экспериментов, порт 5432 |
 | `redis` | `redis:7-alpine` | Брокер задач Celery, порт 6379 |
+
+`api` слушает 8000 только *внутри* docker-сети — `ports` у этого сервиса в
+`docker-compose.yml` намеренно закомментирован, наружу порт не пробрасывается.
+`http://localhost:8000` поэтому не отвечает; это ожидаемо, а не поломка.
+Единственная публичная точка входа — `nginx` на 80, который проксирует на
+`api:8000` сам (`nginx/nginx.conf`).
+
+### Swagger UI: тестовый запрос на эксперимент
+
+FastAPI отдаёт интерактивную документацию на `http://localhost/docs` (ReDoc —
+на `/redoc`). Путь до первого запущенного эксперимента:
+
+1. **`POST /register`** → Try it out → тело `{"email": "...", "password": "..."}` → Execute.
+2. **Authorize** (кнопка с замком вверху справа). Открывается форма OAuth2
+   password flow — она сама обращается к `/token`, копировать JWT руками не
+   нужно. В поле `username` укажите email из шага 1 (несмотря на название —
+   сверяется с `User.email`, см. `main.py`), в `password` — пароль. Остальные
+   поля пустые. Authorize → Close.
+3. **`POST /experiments/`** → Try it out. Swagger уже подставляет рабочий
+   пример спецификации (см. `schemas.py`, `ExperimentCreate`). Для быстрой
+   проверки добавьте в `protocol` `"n_seeds": 1`, иначе по умолчанию уйдёт
+   10 сидов. Execute — в ответе придёт `id` со статусом `QUEUED`, задача уже
+   поставлена в Celery.
+4. **`GET /experiments/{experiment_id}`** с этим `id` — после того как
+   `worker` (`docker compose logs -f worker`) досчитает, статус сменится на
+   `COMPLETED` и появится `results`.
 
 ### Integration-тесты сервисного контура
 
