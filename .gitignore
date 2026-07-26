@@ -2,7 +2,6 @@ __pycache__/
 venv/
 .venv/
 .env
-.env.example
 .DS_Store
 .codex
 .pytest_cache/

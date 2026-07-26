@@ -4,7 +4,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-469%20passed-brightgreen.svg)](#)
+[![Tests](https://img.shields.io/badge/tests-604%20passed-brightgreen.svg)](#)
 
 ## Описание
 
@@ -17,6 +17,64 @@ Mackey-Glass, Lorenz-63). В ней реализовано семь моделе
 TPE), линейным Ridge-readout и многосидовой статистикой (mean ± std), что делает сравнение
 методологически корректным и полностью воспроизводимым. Каждый запуск сохраняет версии
 библиотек, git-хеш и аппаратный профиль для повторяемости результатов.
+
+## Статус реализации
+
+Раздел существует, чтобы читателю не приходилось угадывать, что уже работает,
+а что пока замысел. Каждый пункт «реализовано» назван вместе с артефактом или
+модулем, по которому это можно проверить самому.
+
+### Реализовано и подтверждено артефактами
+
+| Что | Чем подтверждается |
+|---|---|
+| Семь архитектур резервуаров под общим протоколом | `src/rc_bench/core/reservoirs/`, `tests/test_reservoirs.py` |
+| Реальный ряд (UCI household power, 12 000 точек, SHA-256 закреплён) | `reports/jmlc_2026/dataset_manifest.json` |
+| Матрица 7 моделей × 2 горизонта в честном режиме | `reports/jmlc_2026/fair/runs/`, `reports/jmlc_2026/aggregates/matrix_table.csv` |
+| Второй контур с индивидуальной настройкой (best-effort) | `reports/jmlc_2026/best_effort/runs/`, `aggregates/matrix_table_best_effort.csv` |
+| Три детерминированных baseline (persistence, seasonal, Ridge AR) | `src/rc_bench/core/baselines.py`, строки `baseline_*` в таблице |
+| MASE и MAE skill относительно сезонного наивного прогноза | колонки `mase`, `mae_skill` в `aggregates/matrix_table.csv` |
+| Ресурсный профиль: время обучения, p50/p95, throughput, peak RSS, размеры | `reports/jmlc_2026/profiles/summary.json` |
+| Прокси активности: MAC на шаг, разреженность состояния, спайки LSM | блок `activity` в `reports/jmlc_2026/profiles/*.json` |
+| Измеренная энергия вывода через Intel RAPL (мДж/вывод, samples/J, EDP) | блок `energy` там же; `src/rc_bench/profiling/energy.py` |
+| Три Pareto-диаграммы: качество—задержка, —память, —энергия | `reports/jmlc_2026/plots/pareto_quality_*.png` |
+| Выбор модели под ограничения устройства | `reports/jmlc_2026/selection.md`, `rcbench select` |
+| Evidence-бандл с проверкой прослеживаемости и release-гейт | `scripts/validate_evidence.py`, `scripts/verify.sh release` |
+| Сервисный контур: FastAPI + Celery + Redis + PostgreSQL за Nginx | `docker-compose.yml`, `tests/test_api_ownership.py -m integration` |
+| CI и демонстрация одной командой | `.github/workflows/`, `make demo` |
+
+### Запланировано
+
+Ниже — то, чего в репозитории **нет**. Формулировки намеренно без будущего
+времени в описании возможностей: пока пункт здесь, платформа этого не умеет.
+
+- Профиль на Jetson или другом edge-устройстве. Сейчас все измерения сделаны
+  на одной x86-машине, и переносить их на ARM-ускоритель было бы домыслом.
+- Изоляция peak RSS в отдельном spawn-процессе. Сейчас пик снимается в
+  форкнутом потомке и наследует резидентную память родителя (DEC-020);
+  изолированный вклад публикуется рядом как `peak_rss_delta_bytes`.
+- Аналитический счёт операций для `deep_esn`, `fhn` и `qrc`. У этих трёх
+  `step_operation_counts()` возвращает `None`, и профиль честно пишет
+  `backend: "unavailable"` вместо угаданного числа.
+- Матрица на второй реальный датасет.
+
+### Недоступно, с причиной
+
+- **Энергия на машине без счётчика.** RAPL требует читаемого
+  `/sys/class/powercap/intel-rapl:*/energy_uj`, который с CVE-2020-8694 закрыт
+  для непривилегированных пользователей. Там, где счётчика нет или окно
+  измерения короче периода его обновления, публикуется
+  `energy.status = "unavailable"` с причиной — не ноль и не оценка по TDP.
+- **Энергия отдельной модели.** RAPL меряет пакет процессора целиком.
+  Публикуются обе величины — полная и за вычетом простоя равной длительности,
+  — но изолированным измерением модели это не является, и так и сказано в
+  `reports/jmlc_2026/README.md`.
+- **Прокси активности в джоулях.** MAC, разреженность и спайки живут в
+  отдельном блоке `activity` и никогда не пересчитываются в энергию: для
+  такого пересчёта нужна модель энергопотребления железа, которой у проекта
+  нет (DEC-022).
+- **Quantum advantage у QRC.** Это mean-field Ising-симуляция с классическим
+  tanh-обновлением, а не unitary-эволюция.
 
 ## Реализованные модели
 
@@ -105,8 +163,10 @@ rcbench report reports/runs --metric nrmse_range
 постановки экспериментов в очередь. Поднять стек целиком:
 
 ```bash
-# 1. Создайте .env с переменными окружения (POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB и т.д.)
-cp .env.example .env   # отредактируйте под себя
+# 1. Создайте .env — без него docker compose не стартует вообще
+#    ("env file .env not found"). Значения в образце уже совпадают с тем,
+#    что ожидает tests/conftest.py.
+cp .env.example .env
 
 # 2. Соберите образ и запустите все сервисы
 docker compose up -d --build
@@ -124,6 +184,23 @@ docker compose ps
 | `worker` | сборка из `Dockerfile` | Celery-воркер для фоновых прогонов |
 | `db` | `postgres:15-alpine` | Хранилище экспериментов, порт 5432 |
 | `redis` | `redis:7-alpine` | Брокер задач Celery, порт 6379 |
+
+### Integration-тесты сервисного контура
+
+Тесты владельца эксперимента и приёма JMLC-спек ходят в настоящие PostgreSQL и
+Redis, поэтому помечены `integration` и исключены из обычного гейта:
+
+```bash
+docker compose up -d db redis
+poetry run pytest -m integration          # 5 тестов
+docker compose down
+```
+
+Учётки в `.env.example` совпадают с умолчаниями `tests/conftest.py`, так что
+экспортировать ничего не нужно; расхождение между ними ловит
+`tests/test_repo_metadata.py`. Если `docker` отвечает `permission denied ...
+docker.sock`, а вы уже добавлены в группу `docker`, — членство не подхвачено
+текущей сессией: помогает `sg docker -c '<команда>'` или перелогин.
 
 Остановить и удалить контейнеры:
 

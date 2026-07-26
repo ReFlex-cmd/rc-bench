@@ -33,11 +33,11 @@
 | DEMO-001 | P0 | Воспроизводимый demo-сценарий и резервные готовые артефакты | DOC-001, PLOT-001 | 1 ч | DONE |
 | PRES-001 | P0 | Перенести подтверждённые числа и графики в презентацию | EVID-001, PLOT-001 | 1.5 ч | BLOCKED (нет файла презентации в репозитории) |
 | REL-001 | P0 | Release gate и PR `dev → main` | PLOT-001, DOC-001, DOC-002, DEMO-001 | 1 ч | READY |
-| PROXY-001 | P1 | Operation count и state sparsity | PROF-002 | 1.5 ч | READY |
-| PROXY-002 | P1 | LSM spikes и synaptic events | PROF-002 | 1.5 ч | READY |
-| REPO-001 | P1 | Добавить файл лицензии после подтверждения выбранной лицензии | BOOT-002 | 0.5 ч | BLOCKED |
-| API-001 | P2 | Полная проверка ownership в API | REL-001 | 2 ч | READY |
-| ENERGY-002 | P2 | RAPL/Jetson backend при появлении устройства | REL-001 | — | BLOCKED |
+| PROXY-001 | P1 | Operation count и state sparsity | PROF-002 | 1.5 ч | DONE (167ece1, 0e68c82) |
+| PROXY-002 | P1 | LSM spikes и synaptic events | PROF-002 | 1.5 ч | DONE (68b785a, f5407a0) |
+| REPO-001 | P1 | Добавить файл лицензии после подтверждения выбранной лицензии | BOOT-002 | 0.5 ч | DONE (d256dca) |
+| API-001 | P2 | Полная проверка ownership в API | REL-001 | 2 ч | DONE (b0f930c; integration-тесты пройдены на docker compose) |
+| ENERGY-002 | P2 | RAPL/Jetson backend при появлении устройства | REL-001 | — | DONE для RAPL (6842630); Jetson остаётся вне объёма — устройства нет |
 
 ## Блок соответствия описанию проекта (PDF)
 
@@ -48,17 +48,17 @@
 
 | ID | P | Задача | Зависит от | Оценка | Статус |
 |---|---:|---|---|---:|---|
-| REPO-001 | P0 | Файл `LICENSE` (MIT) и тест обложки | — | 0.5 ч | READY (решение принято, разблокирована) |
-| PROXY-001 | P0 | Аналитический счёт операций и разреженность состояния | PROF-002 | 1.5 ч | READY |
-| PROXY-002 | P0 | Спайки и синаптические события LSM | PROXY-001 | 1 ч | READY |
-| ENERGY-002 | P0 | Backend Intel RAPL и протокол энергоизмерения | PROF-001 | 2 ч | READY (предусловие: доступ к `energy_uj`) |
-| ENERGY-003 | P0 | Energy и activity в схеме, профиле и Pareto | ENERGY-002, PROXY-002 | 2 ч | READY |
-| MODE-001 | P0 | Режим best-effort в спецификации и раннере матрицы | — | 1.5 ч | READY |
-| MODE-002 | P0 | Mode-aware evidence-гейт и раздельные агрегаты | MODE-001 | 1.5 ч | READY |
-| PROF-004 | P1 | Время обучения в опубликованной таблице | — | 0.5 ч | READY |
-| SELECT-001 | P0 | Выбор Pareto-оптимальной модели под ограничения устройства | ENERGY-003, PROF-004 | 2 ч | READY |
-| API-001 | P1 | Baseline-спеки и ownership в сервисном контуре | — | 2 ч | READY |
-| EXP-004 | P0 | Перепрогон бандла: fair + best_effort + energy + прокси | все выше | 1 ч + compute | READY |
+| REPO-001 | P0 | Файл `LICENSE` (MIT) и тест обложки | — | 0.5 ч | DONE (d256dca) |
+| PROXY-001 | P0 | Аналитический счёт операций и разреженность состояния | PROF-002 | 1.5 ч | DONE (167ece1, 0e68c82) |
+| PROXY-002 | P0 | Спайки и синаптические события LSM | PROXY-001 | 1 ч | DONE (68b785a, f5407a0) |
+| ENERGY-002 | P0 | Backend Intel RAPL и протокол энергоизмерения | PROF-001 | 2 ч | DONE (6842630, 554a383, 9830d08) |
+| ENERGY-003 | P0 | Energy и activity в схеме, профиле и Pareto | ENERGY-002, PROXY-002 | 2 ч | DONE (15dde2b, 16f8c27) |
+| MODE-001 | P0 | Режим best-effort в спецификации и раннере матрицы | — | 1.5 ч | DONE (81bc670) |
+| MODE-002 | P0 | Mode-aware evidence-гейт и раздельные агрегаты | MODE-001 | 1.5 ч | DONE (7ed3b40, 08b2c34) |
+| PROF-004 | P1 | Время обучения в опубликованной таблице | — | 0.5 ч | DONE (1738d7f, 9a10375) |
+| SELECT-001 | P0 | Выбор Pareto-оптимальной модели под ограничения устройства | ENERGY-003, PROF-004 | 2 ч | DONE (e56b335) |
+| API-001 | P1 | Baseline-спеки и ownership в сервисном контуре | — | 2 ч | DONE (b0f930c; integration-тесты пройдены на docker compose) |
+| EXP-004 | P0 | Перепрогон бандла: fair + best_effort + energy + прокси | все выше | 1 ч + compute | DONE (26bc1e8) |
 | DOC-003 | P0 | Разметка implemented/planned/unavailable, DEC-021…024, обложка репо | EXP-004 | 2 ч | READY |
 | REL-002 | P0 | Релизная ветка, PR `→ main`, разделение контуров | DOC-003 | 1 ч | READY |
 
