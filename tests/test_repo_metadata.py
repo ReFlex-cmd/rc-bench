@@ -67,6 +67,32 @@ def test_env_example_matches_what_the_test_suite_expects():
         )
 
 
+def test_readme_does_not_promise_a_build_system_that_is_absent():
+    """README долгое время обещал `make demo` при отсутствующем Makefile —
+    заявление без артефакта ровно того же класса, что бейдж лицензии без
+    файла лицензии. Настоящая демонстрация одной командой существует, но
+    зовётся иначе (`rcbench run configs/jmlc/demo.yaml`)."""
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    make_targets = re.findall(r"\bmake\s+([a-zA-Z][\w-]*)", readme)
+    if not make_targets:
+        return
+    makefile = next(
+        (
+            REPO_ROOT / name
+            for name in ("Makefile", "makefile", "GNUmakefile")
+            if (REPO_ROOT / name).is_file()
+        ),
+        None,
+    )
+    assert makefile is not None, (
+        f"README называет команды make {sorted(set(make_targets))}, "
+        "но Makefile в репозитории нет"
+    )
+    defined = set(re.findall(r"^([a-zA-Z][\w-]*):", makefile.read_text(encoding="utf-8"), re.M))
+    missing = sorted(set(make_targets) - defined)
+    assert not missing, f"README называет несуществующие цели make: {missing}"
+
+
 def test_documented_service_startup_waits_for_readiness():
     """`docker compose up -d` возвращает управление по факту старта контейнера,
     а не готовности PostgreSQL. На свежем томе initdb занимает ~12 с, и

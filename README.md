@@ -4,7 +4,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-604%20passed-brightgreen.svg)](#)
+[![Tests](https://img.shields.io/badge/tests-605%20passed-brightgreen.svg)](#)
 
 ## Описание
 
@@ -37,12 +37,12 @@ TPE), линейным Ridge-readout и многосидовой статист�
 | Ресурсный профиль: время обучения, p50/p95, throughput, peak RSS, размеры | `reports/jmlc_2026/profiles/summary.json` |
 | Прокси активности: MAC на шаг, разреженность состояния, спайки LSM | блок `activity` в `reports/jmlc_2026/profiles/*.json` |
 | Аналитический счёт операций у шести архитектур из семи | `step_operation_counts()` в `core/reservoirs/*_service.py`, `tests/test_activity.py` |
-| Измеренная энергия вывода через Intel RAPL (мДж/вывод, samples/J, EDP) | блок `energy` там же; `src/rc_bench/profiling/energy.py` |
+| Измеренная энергия вывода через RAPL / powercap (мДж/вывод, samples/J, EDP) | блок `energy` там же; `src/rc_bench/profiling/energy.py` |
 | Три Pareto-диаграммы: качество—задержка, —память, —энергия | `reports/jmlc_2026/plots/pareto_quality_*.png` |
 | Выбор модели под ограничения устройства | `reports/jmlc_2026/selection.md`, `rcbench select` |
 | Evidence-бандл с проверкой прослеживаемости и release-гейт | `scripts/validate_evidence.py`, `scripts/verify.sh release` |
 | Сервисный контур: FastAPI + Celery + Redis + PostgreSQL за Nginx | `docker-compose.yml`, `tests/test_api_ownership.py -m integration` |
-| CI и демонстрация одной командой | `.github/workflows/`, `make demo` |
+| CI и демонстрация одной командой | `.github/workflows/ci.yml`; `rcbench run configs/jmlc/demo.yaml` |
 
 ### Запланировано
 
@@ -63,6 +63,21 @@ TPE), линейным Ridge-readout и многосидовой статист�
   для непривилегированных пользователей. Там, где счётчика нет или окно
   измерения короче периода его обновления, публикуется
   `energy.status = "unavailable"` с причиной — не ноль и не оценка по TDP.
+
+  Замечание про имя `intel-rapl` на машине с AMD. Измерения сняты на
+  `AMD Ryzen 5 7430U` (см. `cpu_model` в `reports/jmlc_2026/hardware_profile.json`),
+  и это не противоречит ни пути в sysfs, ни значению `backend: "intel_rapl"`.
+  `intel-rapl` — имя control type в powercap-иерархии ядра, а не утверждение о
+  производителе процессора: начиная с Linux 5.11 драйвер `intel_rapl_msr`
+  обслуживает и AMD Zen (Family 17h и новее), читая собственные RAPL-регистры
+  AMD, и регистрируется в powercap под тем же историческим именем. На этой
+  машине загружены `intel_rapl_msr` и `intel_rapl_common`, а иерархия выглядит
+  так: `intel-rapl:0` с `name = package-0` и его поддомен `intel-rapl:0:0` с
+  `name = core`. Измерение берёт домен верхнего уровня — `package-0`, что и
+  записано в `hardware_profile.json`. Идентификатор `intel_rapl` в артефактах
+  назван по драйверу ядра, а не по вендору CPU, и менять его на что-то
+  «нейтральное» значило бы перестать называть фактически использованный
+  интерфейс.
 - **Энергия отдельной модели.** RAPL меряет пакет процессора целиком.
   Публикуются обе величины — полная и за вычетом простоя равной длительности,
   — но изолированным измерением модели это не является, и так и сказано в
@@ -365,6 +380,16 @@ RunRecord`, а не оценка.
 
 Полная эмпирическая сводка с иерархией моделей, сравнением с литературой и известными
 ограничениями — в [reports/empirical_summary.md](reports/empirical_summary.md).
+
+## Разработка
+
+Проект вырос из моей выпускной квалификационной работы и развивается в заданном
+там направлении. Устойчивые решения по протоколу и их причины записаны в
+[docs/DECISIONS.md](docs/DECISIONS.md), обязательные требования к матрице,
+метрикам и артефактам — в [docs/PROJECT_CONTRACT.md](docs/PROJECT_CONTRACT.md).
+
+При работе использовались ИИ-агенты; что именно они делали, как это
+проверялось и что осталось за мной — в [AI_USAGE.md](AI_USAGE.md).
 
 ## Лицензия
 
