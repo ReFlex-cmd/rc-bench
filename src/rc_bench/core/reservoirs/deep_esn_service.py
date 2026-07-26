@@ -120,3 +120,33 @@ class DeepESNReservoir(BaseReservoir):
         u = float(np.asarray(x_t).reshape(-1)[0])
         self._step_states, obs = self._advance(u, self._step_states)
         return obs
+
+    def step_operation_counts(self) -> Dict[str, int]:
+        """One ``step()`` is one ``_advance()`` — a leaky-ESN update per layer.
+
+        Layer ``l`` computes (see ``_advance``):
+            pre = tanh(W_in[l] @ inp + W_rec[l] @ h[l]); h[l] = (1-a_l)*h[l] + a_l*pre
+          W_in[l] @ inp   -> nnz(W_in[l]) MAC. ``inp`` is the scalar input for
+                             layer 0 and the previous layer's state vector for
+                             l >= 1, so this term already accounts for the
+                             inter-layer connection: no extra cost is added for
+                             passing a state between layers.
+          W_rec[l] @ h[l] -> nnz(W_rec[l]) MAC (one per nonzero weight)
+          leak mixing     -> 2*units MAC (two scalar-vector multiplies; the
+                             final "+" is not counted separately, see
+                             activity.py's MAC-counting convention)
+          tanh            -> units nonlinearities
+
+        Weights are stored as dense ndarrays even where ``density`` < 1 masked
+        entries to zero, so nonzeros are counted directly rather than read off
+        a sparse ``.nnz`` — same treatment as leaky_esn_service.py.
+        """
+        w_rec_nnz = [int(np.count_nonzero(W)) for W in self._W_recs]
+        w_in_nnz = [int(np.count_nonzero(W)) for W in self._W_ins]
+        return {
+            "reservoir_macs": (
+                sum(w_rec_nnz) + sum(w_in_nnz) + 2 * self._units * self._n_layers
+            ),
+            "reservoir_nonlinearities": self._units * self._n_layers,
+            "reservoir_nonzero_recurrent_weights": sum(w_rec_nnz),
+        }

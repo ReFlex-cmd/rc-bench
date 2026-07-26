@@ -65,3 +65,27 @@ def test_env_example_matches_what_the_test_suite_expects():
         assert f'"{key}": "{value}"' in conftest, (
             f"{key}={value} в .env.example не совпадает с умолчанием conftest"
         )
+
+
+def test_documented_service_startup_waits_for_readiness():
+    """`docker compose up -d` возвращает управление по факту старта контейнера,
+    а не готовности PostgreSQL. На свежем томе initdb занимает ~12 с, и
+    команда вида `up -d db redis && pytest -m integration` падает четырьмя
+    ERROR с `ConnectionResetError` — читатель видит не «БД ещё не готова», а
+    сломанный тест. `--wait` дожидается healthcheck из docker-compose.yml."""
+    sources = {
+        "README.md": (REPO_ROOT / "README.md").read_text(encoding="utf-8"),
+        ".env.example": (REPO_ROOT / ".env.example").read_text(encoding="utf-8"),
+    }
+    found = False
+    for name, text in sources.items():
+        for line in text.splitlines():
+            if "docker compose up -d" not in line or "db redis" not in line:
+                continue
+            found = True
+            assert "--wait" in line, (
+                f"{name}: «{line.strip()}» поднимает БД без --wait, "
+                "integration-тесты стартуют раньше, чем PostgreSQL примет "
+                "соединения"
+            )
+    assert found, "команда запуска db/redis нигде не документирована — тест потерял смысл"

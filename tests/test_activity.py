@@ -78,7 +78,76 @@ def test_esn_operation_count_matches_reservoirpy_update_rule():
     assert counts["reservoir_nonlinearities"] == 40
 
 
+def test_deep_esn_operation_count_sums_every_layer():
+    n_layers, units = 3, 20
+    reservoir = get_reservoir(
+        "deep_esn",
+        {"n_layers": n_layers, "units": units, "density": 0.1, "seed": 7},
+    )
+    counts = count_step_operations(reservoir, readout_input_dim=n_layers * units)
+    w_rec_nnz = sum(int(np.count_nonzero(W)) for W in reservoir._W_recs)
+    w_in_nnz = sum(int(np.count_nonzero(W)) for W in reservoir._W_ins)
+    # На слой: W_in@inp (nnz MAC) + W_rec@h (nnz MAC) + leak-смешение (2*units MAC)
+    assert counts["backend"] == "analytic"
+    assert counts["reservoir_macs"] == w_rec_nnz + w_in_nnz + 2 * units * n_layers
+    assert counts["reservoir_nonlinearities"] == units * n_layers
+    assert counts["reservoir_nonzero_recurrent_weights"] == w_rec_nnz
+    assert counts["total_macs"] == counts["reservoir_macs"] + n_layers * units
+
+
+def test_deep_esn_counts_the_inter_layer_connection_not_just_the_input():
+    """Слой 0 принимает скаляр, слои 1+ — вектор состояния предыдущего слоя,
+    поэтому их W_in на порядок дороже. Счёт, учитывающий только вход модели,
+    занизил бы стоимость почти вдвое — этот тест ловит именно такую ошибку."""
+    n_layers, units = 3, 20
+    reservoir = get_reservoir(
+        "deep_esn",
+        {"n_layers": n_layers, "units": units, "density": 1.0, "seed": 7},
+    )
+    counts = count_step_operations(reservoir, readout_input_dim=n_layers * units)
+    # W_in[0]: units x 1; W_in[l>=1]: units x units. При density=1.0 матрицы
+    # W_rec плотные, так что все слагаемые известны точно.
+    w_in_total = units * 1 + (n_layers - 1) * units * units
+    w_rec_total = n_layers * units * units
+    assert counts["reservoir_macs"] == w_rec_total + w_in_total + 2 * units * n_layers
+
+
+def test_qrc_operation_count_pays_the_matvec_once_per_virtual_node():
+    n_qubits, depth = 16, 3
+    reservoir = get_reservoir(
+        "qrc", {"n_qubits": n_qubits, "depth": depth, "seed": 7}
+    )
+    counts = count_step_operations(
+        reservoir, readout_input_dim=n_qubits * depth
+    )
+    j_nnz = int(np.count_nonzero(reservoir._J))
+    # Диагональ J обнулена — самосвязи здесь не физичны.
+    assert j_nnz == n_qubits * (n_qubits - 1)
+    # depth * (J@x) + h_in*u (n_qubits MAC, только на управляемом шаге)
+    assert counts["backend"] == "analytic"
+    assert counts["reservoir_macs"] == depth * j_nnz + n_qubits
+    assert counts["reservoir_nonlinearities"] == n_qubits * depth
+    assert counts["reservoir_nonzero_recurrent_weights"] == j_nnz
+
+
+def test_qrc_operation_count_scales_with_depth():
+    """Виртуальные узлы — не бесплатная развёртка: каждый стоит ещё один
+    matvec. Счёт, посчитавший только управляемый шаг, не отличил бы depth=1
+    от depth=4."""
+    common = {"n_qubits": 12, "seed": 7}
+    shallow = get_reservoir("qrc", {**common, "depth": 1}).step_operation_counts()
+    deep = get_reservoir("qrc", {**common, "depth": 4}).step_operation_counts()
+    j_nnz = shallow["reservoir_nonzero_recurrent_weights"]
+    assert deep["reservoir_macs"] - shallow["reservoir_macs"] == 3 * j_nnz
+    assert deep["reservoir_nonlinearities"] == 4 * shallow["reservoir_nonlinearities"]
+
+
 def test_unknown_reservoir_reports_unavailable_instead_of_guessing():
+    """FHN — единственная модель без счёта операций, и не по недосмотру:
+    её шаг — RK4-интегрирование, где стоимость определяется поэлементной
+    арифметикой схемы (и растёт с ``internal_steps``), а не матвеком. Под
+    конвенцию MAC из activity.py это не ложится, поэтому честнее
+    ``unavailable``, чем число, несопоставимое с остальными шестью."""
     reservoir = get_reservoir("fhn", {"units": 20, "seed": 7})
     counts = count_step_operations(reservoir, readout_input_dim=20)
     assert counts["backend"] == "unavailable"

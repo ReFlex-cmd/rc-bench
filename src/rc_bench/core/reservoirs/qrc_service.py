@@ -97,3 +97,31 @@ class QRCReservoir(BaseReservoir):
         features = self._virtual_nodes(self._step_x, u)
         self._step_x = features[: self._n_qubits]
         return features
+
+    def step_operation_counts(self) -> Dict[str, int]:
+        """One ``step()`` is one ``_virtual_nodes()`` call — and that call runs
+        the Ising update ``depth`` times, not once.
+
+        The virtual-node technique is what produces this model's feature
+        vector, so its cost belongs to the step that produces it (see
+        ``_virtual_nodes``):
+          driven update, x = tanh(J @ x + h_in * u):
+            J @ x      -> nnz(J) MAC (one per nonzero coupling)
+            h_in * u   -> n_qubits MAC (scalar-vector multiply)
+          then depth-1 free-evolution updates, x = tanh(J @ x):
+            J @ x      -> nnz(J) MAC each
+          tanh         -> n_qubits nonlinearities per update, depth updates
+
+        Hence ``depth * nnz(J) + n_qubits`` MAC: the coupling matvec is paid
+        once per virtual node, the input field only on the driven one.
+
+        ``J`` is dense with a zeroed diagonal (self-coupling is not physical
+        here), so nonzeros are counted directly; ``nnz(J)`` is normally
+        n_qubits*(n_qubits-1).
+        """
+        j_nnz = int(np.count_nonzero(self._J))
+        return {
+            "reservoir_macs": self._depth * j_nnz + self._n_qubits,
+            "reservoir_nonlinearities": self._n_qubits * self._depth,
+            "reservoir_nonzero_recurrent_weights": j_nnz,
+        }
