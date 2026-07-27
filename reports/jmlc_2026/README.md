@@ -325,6 +325,9 @@ fair-профиль было бы подлогом; отдельного про�
 ## Воспроизведение
 
 ```bash
+# 0. Зафиксировать версию, на которую опубликованы числа ниже
+git checkout v0.1.0-jmlc
+
 # 1. Данные (сверяются с dataset_manifest.json по SHA-256; в Git не попадают)
 poetry run python scripts/download_jmlc_data.py
 
