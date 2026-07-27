@@ -4,7 +4,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-605%20passed-brightgreen.svg)](#)
+[![CI](https://github.com/ReFlex-cmd/rc-bench/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ReFlex-cmd/rc-bench/actions/workflows/ci.yml)
 
 ## Описание
 
@@ -424,6 +424,9 @@ RunRecord`, а не оценка.
 
 При работе использовались ИИ-агенты; что именно они делали, как это
 проверялось и что осталось за мной — в [AI_USAGE.md](AI_USAGE.md).
+
+Полный прогон (`poetry run pytest`) на момент написания собирает 605 тестовых
+кейсов из 510 тестовых функций — разница из-за параметризации.
 
 ## Лицензия
 
